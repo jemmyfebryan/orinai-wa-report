@@ -40,3 +40,6 @@ restart: stop remove run
 # Run tests
 test:
 	pytest tests/
+
+clean-cache:
+	docker builder prune -f
