@@ -1,0 +1,18 @@
+# Common
+.venv
+.env
+__pycache__
+
+# Open Wa Session
+_IGNORE_session
+open-wa-session.postman_collection.json
+open-wa-session.sw_col.json
+
+# Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Unused File
+temp_handler.py

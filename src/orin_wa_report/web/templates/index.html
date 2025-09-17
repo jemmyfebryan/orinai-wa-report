@@ -1,0 +1,261 @@
+<!-- frontend.html -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ORIN Dummy User Manager</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:20px}
+    .row{display:flex;gap:16px;align-items:center}
+    table{border-collapse:collapse;width:100%;margin-top:10px}
+    table,th,td{border:1px solid #ccc}
+    th,td{padding:8px;text-align:left}
+    button{padding:6px 10px}
+    input[type=text],select{padding:6px}
+    .toggle{display:inline-block;width:40px;height:22px;background:#ddd;border-radius:12px;position:relative}
+    .toggle .dot{width:18px;height:18px;background:#fff;border-radius:9px;position:absolute;top:2px;left:2px;transition:.15s}
+    .toggle.on{background:#4caf50}
+    .toggle.on .dot{left:20px}
+    .small{font-size:13px}
+    .muted{color:#666}
+  </style>
+</head>
+<body>
+  <h2>ORIN Dummy User Manager</h2>
+
+  <section id="settings">
+    <h3>Settings</h3>
+    <div class="row">
+      <!-- <label class="row">Enable Agent <div id="enable_agent" class="toggle"><div class="dot"></div></div></label> -->
+      <label class="row">Enable Create Dummy Alert <div id="enable_create_dummy_alert" class="toggle"><div class="dot"></div></div></label>
+      <label class="row">Enable Send Alert <div id="enable_send_alert" class="toggle"><div class="dot"></div></div></label>
+      <button id="apply_settings">Apply Settings</button>
+    </div>
+  </section>
+
+  <hr />
+
+  <section id="user-section">
+    <h3>Dummy User Section</h3>
+
+    <div style="display:flex;gap:40px">
+      <div style="flex:1">
+        <h4>Register New User</h4>
+        <form id="createForm">
+          <div class="row"><label>Name</label><input id="name" type="text" required /></div>
+          <div class="row"><label>Verified</label><input id="verified" type="checkbox" /></div>
+          <div class="row"><label>Phone (if verified)</label><input id="wa_number" type="text" placeholder="628..."/></div>
+          <div class="row"><label>Mimic User</label>
+            <select id="mimic_user">
+              <option>None</option>
+              <option>41677</option>
+              <option>41885</option>
+            </select>
+          </div>
+          <div class="row"><button type="submit">Create User</button></div>
+        </form>
+        <div id="createResult" class="small muted"></div>
+      </div>
+
+      <div style="flex:2">
+        <h4>Registered Users</h4>
+        <table id="usersTable">
+          <thead>
+            <tr>
+              <th>id</th><th>name</th><th>email</th><th>api_token</th><th>wa_key</th><th>wa_notif</th><th>wa_number</th><th>wa_verified</th><th>actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <hr />
+
+  <section id="wa-subscribe">
+    <h3>WhatsApp Subscribe</h3>
+    <div class="row">
+      <label>Choose User</label>
+      <select id="chooseUser"></select>
+      <div id="waActions"></div>
+    </div>
+    <div id="waResult" class="small muted"></div>
+  </section>
+
+  <script>
+    const API_BASE = 'http://localhost:8000'
+
+    // Utilities for toggles
+    function bindToggle(id){
+      const el = document.getElementById(id)
+      el.addEventListener('click', ()=> el.classList.toggle('on'))
+    }
+    ['enable_create_dummy_alert','enable_send_alert'].forEach(bindToggle)
+
+    async function loadSettings(){
+      try{
+        const res = await fetch(API_BASE + '/settings')
+        const s = await res.json()
+        // document.getElementById('enable_agent').classList.toggle('on', s.enable_agent)
+        document.getElementById('enable_create_dummy_alert').classList.toggle('on', s.enable_create_dummy_alert)
+        document.getElementById('enable_send_alert').classList.toggle('on', s.enable_send_alert)
+      }catch(e){console.warn(e)}
+    }
+    document.getElementById('apply_settings').addEventListener('click', async ()=>{
+      const payload = {
+        // enable_agent: document.getElementById('enable_agent').classList.contains('on'),
+        enable_create_dummy_alert: document.getElementById('enable_create_dummy_alert').classList.contains('on'),
+        enable_send_alert: document.getElementById('enable_send_alert').classList.contains('on'),
+      }
+      const r = await fetch(API_BASE + '/settings', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      const j = await r.json()
+      alert('Settings applied')
+    })
+
+    // Create user form
+    document.getElementById('verified').addEventListener('change', (e)=>{
+      document.getElementById('wa_number').disabled = !e.target.checked
+    })
+
+    document.getElementById('createForm').addEventListener('submit', async (ev)=>{
+      ev.preventDefault()
+      const name = document.getElementById('name').value.trim()
+      const verified = document.getElementById('verified').checked
+      const wa_number = document.getElementById('wa_number').value.trim()
+      const mimic_user = document.getElementById('mimic_user').value
+      const payload = { name, verified, wa_number: wa_number || null, mimic_user }
+      try{
+        const res = await fetch(API_BASE + '/alert/users/create', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+        if(res.status === 409){
+          const j = await res.json(); document.getElementById('createResult').innerText = 'Error: mimic_user already taken'
+        } else if(!res.ok){
+          const j = await res.json(); document.getElementById('createResult').innerText = 'Error: ' + (j.detail || 'unknown')
+        } else {
+          document.getElementById('createResult').innerText = 'User created'
+          document.getElementById('createForm').reset()
+        }
+      }catch(err){ document.getElementById('createResult').innerText = 'Network error' }
+      await refreshAll()
+    })
+
+    // Fetch and render users table
+    async function refreshUsers(){
+      const res = await fetch(API_BASE + '/alert/users')
+      const users = await res.json()
+      const tbody = document.querySelector('#usersTable tbody')
+      tbody.innerHTML = ''
+      const choose = document.getElementById('chooseUser')
+      choose.innerHTML = ''
+      users.forEach(u=>{
+        const tr = document.createElement('tr')
+        tr.innerHTML = `
+          <td>${u.id}</td>
+          <td>${u.name}</td>
+          <td>${u.email}</td>
+          <td class="small">${u.api_token}</td>
+          <td>${u.wa_key || ''}</td>
+          <td>${u.wa_notif}</td>
+          <td>${u.wa_number || ''}</td>
+          <td>${u.wa_verified}</td>
+          <td></td>
+        `
+        // actions column
+        const actions = tr.querySelector('td:last-child')
+        const del = document.createElement('button'); del.innerText = 'Delete'; del.addEventListener('click', async ()=>{
+          if(!confirm('Delete user?')) return
+          await fetch(API_BASE + `/alert/users/${u.id}/delete`,{method:'POST'})
+          await refreshAll()
+        })
+        actions.appendChild(del)
+        tbody.appendChild(tr)
+
+        // add to choose dropdown
+        const opt = document.createElement('option'); opt.value = u.id; opt.innerText = `${u.id} - ${u.name}`
+        choose.appendChild(opt)
+      })
+    }
+
+    async function refreshWaActions(){
+      const choose = document.getElementById('chooseUser')
+      const userId = choose.value
+      const container = document.getElementById('waActions')
+      container.innerHTML = ''
+      if(!userId) return
+      const res = await fetch(API_BASE + '/alert/users')
+      const users = await res.json()
+      const u = users.find(x=>String(x.id) === String(userId))
+      if(!u) return
+
+      if(Number(u.wa_verified) === 0){
+        const btn = document.createElement('button'); btn.innerText = 'Subscribe to ORIN Alert Notifications'
+        btn.addEventListener('click', async ()=>{
+          // request subscribe key
+          const r = await fetch(API_BASE + `/alert/users/verify`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${u.api_token}`
+            },
+            body: JSON.stringify({})
+          });
+          const j = await r.json()
+          if(!j.ok){ alert('Error getting key'); return }
+          const key = j.key
+          // open wa link in new tab
+          const waUrl = j.wa_url
+          window.open(waUrl, '_blank')
+          document.getElementById('waResult').innerText = 'Opened WhatsApp link. Waiting for verification...'
+          // simulate waiting 10s then call verify endpoint
+          // setTimeout(async ()=>{
+          //   await fetch(API_BASE + `/demo/users/${u.id}/verify`,{method:'POST'})
+          //   document.getElementById('waResult').innerText = 'User verified (simulated)'
+          //   await refreshAll()
+          // }, 10000)
+        })
+        container.appendChild(btn)
+      } else {
+        // show toggle and unsubscribe
+        const toggle = document.createElement('button')
+        toggle.innerText = u.wa_notif == 1 ? 'Disable Notifications' : 'Enable Notifications'
+        toggle.addEventListener('click', async ()=>{
+          await fetch(API_BASE + `/demo/users/${u.id}/toggle_notif`,{method:'POST'})
+          await refreshAll()
+        })
+        container.appendChild(toggle)
+
+        const unsub = document.createElement('button'); unsub.style.marginLeft='8px'; unsub.innerText='Unsubscribe ORIN Alert Notifications'
+        unsub.addEventListener('click', async ()=>{
+          if(!confirm('Unsubscribe and remove verification?')) return
+          await fetch(API_BASE + `/demo/users/${u.id}/unsubscribe`,{method:'POST'})
+          await refreshAll()
+        })
+        container.appendChild(unsub)
+
+        const del = document.createElement('button'); del.style.marginLeft='8px'; del.innerText='Delete User'
+        del.addEventListener('click', async ()=>{
+          if(!confirm('Delete user?')) return
+          await fetch(API_BASE + `/alert/users/${u.id}/delete`,{method:'POST'})
+          await refreshAll()
+        })
+        container.appendChild(del)
+      }
+    }
+
+    document.getElementById('chooseUser').addEventListener('change', refreshWaActions)
+
+    async function refreshAll(){
+      await refreshUsers()
+      await refreshWaActions()
+      await loadSettings()
+    }
+
+    // initial load
+    refreshAll()
+
+    // Periodically refresh to keep UI in sync (optional)
+    setInterval(refreshAll, 15000)
+  </script>
+</body>
+</html>

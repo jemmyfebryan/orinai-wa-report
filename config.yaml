@@ -1,0 +1,14 @@
+services:
+  enable_agent: true
+dummy:
+  enable_create_alert: false
+  enable_create_user: true
+fastapi:
+  enable_send_alert: true
+server:
+  host: localhost
+  port: 8080
+  debug: true
+database:
+  connection_string: postgresql://user:password@host:port/dbname
+  pool_size: 10
