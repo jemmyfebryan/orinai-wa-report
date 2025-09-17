@@ -13,7 +13,7 @@ build:
 
 # Run the container (detached)
 run:
-	docker run -d -p $(PORT):$(PORT) --name $(CONTAINER_NAME) $(IMAGE_NAME)
+	docker run -d --env-file .env -p $(PORT):$(PORT) --name $(CONTAINER_NAME) $(IMAGE_NAME)
 
 # Stop the container
 stop:
