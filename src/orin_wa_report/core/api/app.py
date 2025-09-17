@@ -25,7 +25,7 @@ from src.orin_wa_report.core.development import (
 from src.orin_wa_report.core.logger import get_logger
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
 # YAML Config
 with open('config.yaml', 'r') as file:

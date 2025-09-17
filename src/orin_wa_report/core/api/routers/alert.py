@@ -14,7 +14,7 @@ from src.orin_wa_report.core.utils import get_db_query_endpoint
 from src.orin_wa_report.core.logger import get_logger
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
 logger = get_logger(__name__, service="FastAPI")
 

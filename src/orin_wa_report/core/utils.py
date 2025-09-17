@@ -11,7 +11,7 @@ from src.orin_wa_report.core.config import DB_QUERY_ENDPOINT
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 vps_ip = os.getenv("VPS_IP")
 vps_db_port = os.getenv("VPS_DB_PORT")
 vps_db_base_url = f"http://{vps_ip}:{vps_db_port}"

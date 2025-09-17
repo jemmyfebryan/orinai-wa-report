@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 # logger = get_logger(__name__)
 
-load_dotenv()
+load_dotenv(override=True)
 
 db_api_key = os.getenv("ORIN_DB_API_KEY")
 APP_STAGE = os.getenv("APP_STAGE")

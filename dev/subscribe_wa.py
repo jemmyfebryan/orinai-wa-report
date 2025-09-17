@@ -16,7 +16,7 @@ import numpy as np
 from src.orin_wa_report.core.utils import get_db_query_endpoint
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
 db_api_key = os.getenv("ORIN_DB_API_KEY")
 

@@ -13,7 +13,7 @@ from src.orin_wa_report.core.logger import get_logger
 logger = get_logger(__name__)
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 
 async def get_subscribed_users() -> List[Dict]:
     url = get_db_query_endpoint(name="devsites_orin_dev")
