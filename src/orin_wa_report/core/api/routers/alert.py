@@ -23,6 +23,8 @@ APP_STAGE = os.getenv("APP_STAGE")
 # Implement fetch BOT Number from Socket Client, otherwise its default to environment
 BOT_PHONE_NUMBER = os.getenv("BOT_PHONE_NUMBER")
 
+logger.info(f"BOT_PHONE_NUMBER: {BOT_PHONE_NUMBER}")
+
 ORIN_DB_API_KEY = None
 if APP_STAGE == "development": 
     ORIN_DB_API_KEY = os.getenv("ORIN_DB_API_KEY", None)
