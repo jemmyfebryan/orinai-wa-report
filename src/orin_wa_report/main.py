@@ -13,16 +13,16 @@ with open('config.yaml', 'r') as file:
 async def main():
     service_tasks = []
     
-    # Start bot in background
-    if config_data.get("services").get("enable_agent"):
-        bot_task = asyncio.create_task(run_bot())
-        service_tasks.append(bot_task)
-
     # Start FastAPI server
     config = uvicorn.Config(app, host="0.0.0.0", port=8000, reload=True)
     server = uvicorn.Server(config)
     api_task = asyncio.create_task(server.serve())
     service_tasks.append(api_task)
+    
+    # Start bot in background
+    if config_data.get("services").get("enable_agent"):
+        bot_task = asyncio.create_task(run_bot())
+        service_tasks.append(bot_task)
 
     # Wait for both
     await asyncio.gather(*service_tasks)
