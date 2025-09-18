@@ -21,7 +21,9 @@ async def run_bot():
     global wa_client
     
     logger.info("🚀 Starting WhatsApp bot...")
-    client = SocketClient(f"http://172.17.0.1:{OPEN_WA_PORT}/", api_key="my_secret_api_key")
+    client = await asyncio.to_thread(
+        lambda: SocketClient(f"http://172.17.0.1:{OPEN_WA_PORT}/", api_key="my_secret_api_key")
+    )
     bot = ChatBotHandler(client)
     
     register_conv_handler(bot=bot)
@@ -43,11 +45,15 @@ async def run_bot():
             if regex_match:
                 key = regex_match.group(1)
                 logger.info(f"Verifying wa for number: {phone_number} with key {key}...")
-                response = await handler_verify_wa(
-                    wa_key=key,
-                    phone_number=phone_number,
-                    user_name=user_name
-                )
+                if key == None or key == "":
+                    logger.info(f"User with number: {phone_number} invalid key.")
+                    response = "Maaf, kode verifikasi Anda tidak sesuai. Silakan coba lagi."
+                else:
+                    response = await handler_verify_wa(
+                        wa_key=key,
+                        phone_number=phone_number,
+                        user_name=user_name
+                    )
             else:
                 logger.info(f"User with number: {phone_number} key not match")
                 response = "Maaf, kode verifikasi Anda tidak sesuai. Silakan coba lagi."
@@ -58,7 +64,7 @@ async def run_bot():
     # Graceful shutdown handler
     async def shutdown():
         logger.info("🛑 Shutting down socket client...")
-        client.disconnect()
+        await asyncio.to_thread(client.disconnect)
         logger.info("✅ Socket client disconnected.")
 
     loop = asyncio.get_running_loop()

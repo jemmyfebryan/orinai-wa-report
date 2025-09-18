@@ -207,7 +207,7 @@ async def verify_user(token: str = Depends(get_bearer_token)):
         async with httpx.AsyncClient() as client:
             response = await client.post(url, json={
                 "query": """
-                    SELECT id, api_token
+                    SELECT id, api_token, wa_number
                     FROM users
                     WHERE
                         api_token = :api_token
@@ -218,8 +218,6 @@ async def verify_user(token: str = Depends(get_bearer_token)):
             })
             response_sql: Dict = response.json()
             
-        user_id = response_sql.get("rows")[0].get("id")
-        
         if len(response_sql.get("rows")) == 0:
             return JSONResponse(content={
                 "ok": False,
@@ -229,6 +227,29 @@ async def verify_user(token: str = Depends(get_bearer_token)):
                 "bot_number": None,
                 "wa_url": None
             }, status_code=404)
+        
+        user = response_sql.get("rows")[0]
+        user_id = user.get("id")
+        user_number = user.get("wa_number")
+        
+            
+        # IMPLEMENT WHEN NEW NUMBER VERIFIED, WHEN THERE IS SAME NUMBER ON OTHER USERS, THE OTHER USERS WILL BE UNVERIFIED
+        if user_number:
+            async with httpx.AsyncClient() as client:
+                await client.post(url, json={
+                    "query": """
+                        UPDATE users
+                        SET
+                            wa_key = '',
+                            wa_notif = 0,
+                            wa_verified = 0,
+                            wa_number = ''
+                        WHERE wa_number = :wa_number
+                          AND id != :user_id; COMMIT;
+                    """,
+                    "params": {"wa_number": user_number, "user_id": user_id},
+                    "api_key": ORIN_DB_API_KEY,
+                })
         
         wa_key_response = await generate_and_store_wa_key(user_id=user_id)
         wa_key = wa_key_response.get("wa_key")

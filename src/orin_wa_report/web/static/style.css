@@ -1,0 +1,151 @@
+/* Global Styles */
+body {
+  font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+  margin: 20px;
+  background-color: #f9f9f9;
+  color: #333;
+}
+
+h2, h3, h4 {
+  color: #fe6300;
+  margin-bottom: 12px;
+}
+
+hr {
+  border: none;
+  height: 1px;
+  background-color: #ccc;
+  margin: 20px 0;
+}
+
+/* Layout */
+.row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+/* Tables */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 10px;
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+table, th, td {
+  border: 1px solid #ddd;
+}
+
+th {
+  background-color: #fe6300;
+  color: #fff;
+  font-weight: 600;
+  padding: 10px;
+}
+
+td {
+  padding: 8px;
+}
+
+td small {
+  color: #666;
+}
+
+/* Buttons */
+button {
+  padding: 8px 14px;
+  background-color: #fe6300;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+button:hover {
+  background-color: #e25600;
+}
+
+/* Inputs and Select */
+input[type=text], select {
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+/* Toggle Switch */
+.toggle {
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  background: #ddd;
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+}
+
+.toggle .dot {
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: .2s;
+}
+
+.toggle.on {
+  background: #fe6300;
+}
+
+.toggle.on .dot {
+  left: 20px;
+}
+
+/* Small Text */
+.small {
+  font-size: 13px;
+}
+
+.muted {
+  color: #666;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+header h1 {
+  color: #fe6300;
+  margin-bottom: 4px;
+}
+
+header p {
+  margin-top: 0;
+  font-size: 14px;
+  color: #666;
+}
+
+footer {
+  margin-top: 40px;
+  text-align: center;
+}
+
+.card {
+  background-color: #fff;
+  border-radius: 6px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
