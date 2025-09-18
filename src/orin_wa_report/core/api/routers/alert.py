@@ -8,6 +8,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from wa_automate_socket_client import SocketClient
 
 from src.orin_wa_report.core.development.create_user import create_dummy_user
 from src.orin_wa_report.core.utils import get_db_query_endpoint
@@ -24,9 +25,13 @@ logger = get_logger(__name__, service="FastAPI")
 APP_STAGE = os.getenv("APP_STAGE")
 
 # Implement fetch BOT Number from Socket Client, otherwise its default to environment
-BOT_PHONE_NUMBER = os.getenv("BOT_PHONE_NUMBER")
+# openwa_client = SocketClient('http://localhost:8085/', 'my_secret_api_key')
+# logger.info(f"Getting BOT_PHONE_NUMBER from SocketClient...")
+# BOT_PHONE_NUMBER = str(openwa_client.getHostNumber())
+# logger.info(f"BOT_PHONE_NUMBER: {BOT_PHONE_NUMBER}")
+# openwa_client.disconnect()
+BOT_PHONE_NUMBER = os.getenv("BOT_PHONE_NUMBER", "")
 
-logger.info(f"BOT_PHONE_NUMBER: {BOT_PHONE_NUMBER}")
 
 ORIN_DB_API_KEY = os.getenv("ORIN_DB_API_KEY", None)
 
