@@ -267,6 +267,14 @@ async def get_verified_user(token: str = Depends(get_bearer_token)):
         response.raise_for_status()
         response_sql = response.json()
         
+        if len(response_sql.get("rows")) == 0:
+            return JSONResponse(content={
+                "ok": False,
+                "status": "error",
+                "message": f"Data not found",
+                "wa_verified": None
+            }, status_code=404)
+        
         wa_verified = response_sql.get("rows")[0].get("wa_verified")
         
         logger.info(f"User token {token} GET wa_verified: {wa_verified}: {response_sql}")
@@ -350,6 +358,14 @@ async def get_toggle_notif(token: str = Depends(get_bearer_token)):
         
         response.raise_for_status()
         response_sql = response.json()
+        
+        if len(response_sql.get("rows")) == 0:
+            return JSONResponse(content={
+                "ok": False,
+                "status": "error",
+                "message": f"Data not found",
+                "wa_verified": None
+            }, status_code=404)
         
         wa_notif = response_sql.get("rows")[0].get("wa_notif")
         
