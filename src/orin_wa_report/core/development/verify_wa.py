@@ -109,6 +109,26 @@ async def verify_wa_key_and_store_wa_number(wa_key: str, wa_number: str):
         if response_sql.get("rows")[0].get("wa_key_exists") == 0:
             raise ValueError(f"Wa key {wa_key} from number {wa_number} doesn't exist in database")
         
+        # IMPLEMENT WHEN NEW NUMBER VERIFIED, WHEN THERE IS SAME NUMBER ON OTHER USERS, THE OTHER USERS WILL BE UNVERIFIED
+        if wa_number:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(db_query_url, json={
+                    "query": """
+                        UPDATE users
+                        SET
+                            wa_key = '',
+                            wa_notif = 0,
+                            wa_verified = 0,
+                            wa_number = ''
+                        WHERE wa_number = :wa_number; COMMIT;
+                    """,
+                    "params": {"wa_number": wa_number},
+                    "api_key": db_api_key,
+                })
+            response.raise_for_status()
+            response_json = response.json()
+            logger.info(f"Unverify all the users with the verified number: {response_json}")
+                
         # Update WA Number to Database
         query = """
         UPDATE users 
