@@ -207,31 +207,67 @@
           const waUrl = j.wa_url
           window.open(waUrl, '_blank')
           document.getElementById('waResult').innerText = 'Opened WhatsApp link. Waiting for verification...'
-          // simulate waiting 10s then call verify endpoint
-          // setTimeout(async ()=>{
-          //   await fetch(API_BASE + `/demo/users/${u.id}/verify`,{method:'POST'})
-          //   document.getElementById('waResult').innerText = 'User verified (simulated)'
-          //   await refreshAll()
-          // }, 10000)
         })
         container.appendChild(btn)
       } else {
-        // show toggle and unsubscribe
+        // fetch current toggle state from server
+        let notifState = false
+        try {
+          const r = await fetch(API_BASE + `/alert/users/toggle_notif`, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${u.api_token}` }
+          })
+          const j = await r.json()
+          notifState = !!j.toggle  // assuming API returns { toggle: 0|1 }
+        } catch(e){ console.warn('Failed to fetch toggle', e) }
+
         const toggle = document.createElement('button')
-        toggle.innerText = u.wa_notif == 1 ? 'Disable Notifications' : 'Enable Notifications'
+        toggle.innerText = notifState ? 'Disable Notifications' : 'Enable Notifications'
         toggle.addEventListener('click', async ()=>{
-          await fetch(API_BASE + `/demo/users/${u.id}/toggle_notif`,{method:'POST'})
-          await refreshAll()
+          try {
+            // determine the desired new state
+            const desiredToggle = notifState ? 0 : 1;
+
+            const r = await fetch(API_BASE + `/alert/users/toggle_notif`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${u.api_token}`
+              },
+              body: JSON.stringify({ toggle: desiredToggle })
+            });
+            
+            const j = await r.json()
+            notifState = !!j.toggle
+            toggle.innerText = notifState ? 'Disable Notifications' : 'Enable Notifications'
+          } catch(e){ alert('Failed to toggle notifications') }
         })
         container.appendChild(toggle)
 
-        const unsub = document.createElement('button'); unsub.style.marginLeft='8px'; unsub.innerText='Unsubscribe ORIN Alert Notifications'
-        unsub.addEventListener('click', async ()=>{
-          if(!confirm('Unsubscribe and remove verification?')) return
-          await fetch(API_BASE + `/demo/users/${u.id}/unsubscribe`,{method:'POST'})
-          await refreshAll()
-        })
-        container.appendChild(unsub)
+        const unsub = document.createElement('button');
+        unsub.style.marginLeft = '8px';
+        unsub.innerText = 'Unsubscribe ORIN Alert Notifications';
+        unsub.addEventListener('click', async () => {
+          if (!confirm('Unsubscribe and remove verification?')) return;
+
+          try {
+            const r = await fetch(API_BASE + `/alert/users/unsubscribe`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${u.api_token}`,
+                'Content-Type': 'application/json'
+              }
+            });
+
+            if (!r.ok) throw new Error('Failed to unsubscribe');
+
+            await refreshAll();
+          } catch (e) {
+            alert(e.message);
+          }
+        });
+        container.appendChild(unsub);
+
 
         const del = document.createElement('button'); del.style.marginLeft='8px'; del.innerText='Delete User'
         del.addEventListener('click', async ()=>{

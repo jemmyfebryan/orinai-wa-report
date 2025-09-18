@@ -25,9 +25,7 @@ BOT_PHONE_NUMBER = os.getenv("BOT_PHONE_NUMBER")
 
 logger.info(f"BOT_PHONE_NUMBER: {BOT_PHONE_NUMBER}")
 
-ORIN_DB_API_KEY = None
-if APP_STAGE == "development": 
-    ORIN_DB_API_KEY = os.getenv("ORIN_DB_API_KEY", None)
+ORIN_DB_API_KEY = os.getenv("ORIN_DB_API_KEY", None)
 
 router = APIRouter(prefix="/alert", tags=["alert"])
 security = HTTPBearer()
@@ -250,4 +248,135 @@ async def verify_user(token: str = Depends(get_bearer_token)):
             "key": None,
             "bot_number": None,
             "wa_url": None
-        }, status_code=404)
+        }, status_code=500)
+
+# Unsubscribe
+@router.post("/users/unsubscribe")
+async def unsubscribe_user(token: str = Depends(get_bearer_token)):
+    try:
+        url = get_db_query_endpoint(name=APP_STAGE)
+        
+        query = """
+            UPDATE users
+            SET
+                wa_notif = 0,
+                wa_verified = 0,
+                wa_number = "",
+                wa_key = ""
+            WHERE
+                api_token = :api_token
+                AND deleted_at IS NULL;
+            COMMIT;
+        """
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json={
+                "query": query,
+                "params": {
+                    "api_token": token
+                },
+                "api_key": ORIN_DB_API_KEY,
+            })
+            
+        response.raise_for_status()
+        response_sql = response.json()
+        
+        logger.info(f"User token {token} unsubscribed: {response_sql}")
+        return {
+            "ok": True,
+            "status": "success",
+            "message": "Successfully unsubscribe user."
+        }
+    except Exception as e:
+        return JSONResponse(content={
+            "ok": False,
+            "status": "error",
+            "message": f"Error when unsubscribe user {str(e)}",
+        }, status_code=500)
+    # global df
+    # idx = df.index[df["id"] == user_id]
+    # if idx.empty:
+    #     raise HTTPException(status_code=404, detail="user not found")
+    # idx = idx[0]
+    # df.at[idx, "wa_notif"] = 0
+    # df.at[idx, "wa_verified"] = 0
+    # df.at[idx, "wa_key"] = None
+    # return {"ok": True}
+
+# Toggle Notification
+class ToggleRequest(BaseModel):
+    toggle: int  # 0 or 1
+    
+@router.get("/users/toggle_notif")
+async def get_toggle_notif(token: str = Depends(get_bearer_token)):
+    try:
+        url = get_db_query_endpoint(name=APP_STAGE)
+        
+        query = "SELECT wa_notif FROM users WHERE api_token = :api_token AND deleted_at IS NULL LIMIT 1;"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json={
+                "query": query,
+                "params": {
+                    "api_token": token
+                }
+            })
+        
+        response.raise_for_status()
+        response_sql = response.json()
+        
+        wa_notif = response_sql.get("rows")[0].get("wa_notif")
+        
+        logger.info(f"User token {token} GET wa_notif: {wa_notif}: {response_sql}")
+        
+        return {
+            "ok": True,
+            "status": "success",
+            "message": "Notification fetched successfully",
+            "toggle": wa_notif
+        }
+    except Exception as e:
+        return JSONResponse(content={
+            "ok": False,
+            "status": "error",
+            "message": f"Error when fetch toggle: {str(e)}",
+            "toggle": None
+        }, status_code=500)
+        
+@router.post("/users/toggle_notif")
+async def set_toggle_notif(payload: ToggleRequest, token: str = Depends(get_bearer_token)):
+    try:
+        url = get_db_query_endpoint(name=APP_STAGE)
+        
+        desired_toggle = payload.toggle
+        
+        query = "UPDATE users SET wa_notif = :desired_toggle WHERE api_token = :api_token AND deleted_at IS NULL; COMMIT;"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json={
+                "query": query,
+                "params": {
+                    "desired_toggle": desired_toggle,
+                    "api_token": token
+                },
+                "api_key": ORIN_DB_API_KEY,
+            })
+        
+        response.raise_for_status()
+        response_sql: Dict = response.json()
+        
+        logger.info(f"Toggled for api_token: {token} to {desired_toggle}: {response_sql}")
+        
+        return {
+            "ok": True,
+            "status": "success",
+            "message": "Notification toggled successfully",
+            "toggle": desired_toggle
+        }
+    except Exception as e:
+        return JSONResponse(content={
+            "ok": False,
+            "status": "error",
+            "message": f"Error when toggle notif: {str(e)}",
+            "toggle": None
+        }, status_code=500)

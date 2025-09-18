@@ -43,22 +43,17 @@ app = FastAPI()
 # Periodic Task
 @app.on_event("startup")
 async def start_background_task():
+    # Initialize openwa_client
+    asyncio.create_task(init_openwa_client())
+    
     # Message Queue for Bulk Messages
     asyncio.create_task(message_worker())
     
     # Dummy alert notifications creating
     asyncio.create_task(periodic_dummy_notifications())
-    # if config_data.get("dummy").get("enable_create_alert", False):
-    #     logger.info("Background dummy alert job enabled.")
-    # else:
-    #     logger.info("Background dummy alert job disabled by config.")
-        
+    
     # Send Alert to ORIN Subscribers
     asyncio.create_task(periodic_send_notifications())
-    # if config_data.get("fastapi").get("enable_send_alert", False):
-    #     logger.info("Background Whatsapp send alert job enabled")
-    # else:
-    #     logger.info("Background Whatsapp send alert job disabled by config")
         
 # Disconnect gracefully on shutdown
 @app.on_event("shutdown")
@@ -115,8 +110,19 @@ async def get_qr_raw():
 
 # OpenWA Client
 OPEN_WA_PORT = os.getenv("OPEN_WA_PORT")
-openwa_client = SocketClient(f"http://172.17.0.1:{OPEN_WA_PORT}/", api_key="my_secret_api_key")
-    
+openwa_client = None
+
+async def init_openwa_client():
+    global openwa_client
+
+    loop = asyncio.get_event_loop()
+    def blocking_init():
+        global openwa_client
+        openwa_client = SocketClient(f"http://172.17.0.1:{OPEN_WA_PORT}/", api_key="my_secret_api_key")
+        logger.info("OpenWA Client Connected!")
+
+    await loop.run_in_executor(None, blocking_init)
+
 class MessageRequest(BaseModel):
     to: str       # phone number, e.g. "1234567890@c.us"
     message: str  # message text
