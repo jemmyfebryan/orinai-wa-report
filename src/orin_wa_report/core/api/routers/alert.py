@@ -12,6 +12,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from src.orin_wa_report.core.development.create_user import create_dummy_user
 from src.orin_wa_report.core.utils import get_db_query_endpoint
 from src.orin_wa_report.core.logger import get_logger
+from src.orin_wa_report.core.development.verify_wa import (
+    generate_and_store_wa_key
+)
 
 from dotenv import load_dotenv
 load_dotenv(override=True)
@@ -190,11 +193,6 @@ async def delete_user(user_id: int):
             "message": f"Error when deleting user: {str(e)}"
         }, status_code=500)
 
-
-from src.orin_wa_report.core.development.verify_wa import (
-    generate_and_store_wa_key
-)
-
 @router.post("/users/verify")
 async def verify_user(token: str = Depends(get_bearer_token)):
     try:
@@ -250,7 +248,44 @@ async def verify_user(token: str = Depends(get_bearer_token)):
             "wa_url": None
         }, status_code=500)
 
-# Unsubscribe
+# Get whether user verified or not
+@router.get("/users/verified")
+async def get_verified_user(token: str = Depends(get_bearer_token)):
+    try:
+        url = get_db_query_endpoint(name=APP_STAGE)
+        
+        query = "SELECT wa_verified FROM users WHERE api_token = :api_token AND deleted_at IS NULL LIMIT 1;"
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json={
+                "query": query,
+                "params": {
+                    "api_token": token
+                }
+            })
+        
+        response.raise_for_status()
+        response_sql = response.json()
+        
+        wa_verified = response_sql.get("rows")[0].get("wa_verified")
+        
+        logger.info(f"User token {token} GET wa_verified: {wa_verified}: {response_sql}")
+        
+        return {
+            "ok": True,
+            "status": "success",
+            "message": "Notification fetched successfully",
+            "wa_verified": wa_verified
+        }
+    except Exception as e:
+        return JSONResponse(content={
+            "ok": False,
+            "status": "error",
+            "message": f"Error when fetch toggle: {str(e)}",
+            "wa_verified": None
+        }, status_code=500)
+
+# Unsubscribed
 @router.post("/users/unsubscribe")
 async def unsubscribe_user(token: str = Depends(get_bearer_token)):
     try:
@@ -293,15 +328,6 @@ async def unsubscribe_user(token: str = Depends(get_bearer_token)):
             "status": "error",
             "message": f"Error when unsubscribe user {str(e)}",
         }, status_code=500)
-    # global df
-    # idx = df.index[df["id"] == user_id]
-    # if idx.empty:
-    #     raise HTTPException(status_code=404, detail="user not found")
-    # idx = idx[0]
-    # df.at[idx, "wa_notif"] = 0
-    # df.at[idx, "wa_verified"] = 0
-    # df.at[idx, "wa_key"] = None
-    # return {"ok": True}
 
 # Toggle Notification
 class ToggleRequest(BaseModel):
