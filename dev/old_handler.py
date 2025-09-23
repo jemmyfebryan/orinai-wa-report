@@ -255,7 +255,6 @@ class SessionEntry:
         self.last_activity = last_activity
         self.inactivity_task: Optional[asyncio.Task] = None
         self.forced_task: Optional[asyncio.Task] = None
-        self.processing_lock = asyncio.Lock()
 
 
 class SessionManager:
@@ -519,29 +518,9 @@ async def chat_response(
             await _DB.add_message(entry.session_id, sender="user", body=text)
         except Exception:
             logger.exception("Failed to store incoming message")
-    
-        # Check if session is already processing a message
-        if entry.processing_lock.locked():
-            # Send immediate response without processing
-            reply = "Tunggu sebentar, ORIN AI sedang memproses balasan kamu"
-            try:
-                client.sendText(phone_jid, reply)
-            except Exception:
-                logger.exception("Failed to send wait reply to %s", phone_jid)
-    
-            try:
-                await _DB.add_message(entry.session_id, sender="bot", body=reply)
-            except Exception:
-                logger.exception("Failed to store wait bot message")
-    
-            # Update session activity
-            await _SESSION_MANAGER.touch_session(phone, client)
-            return reply
-    
-        # Acquire lock to process this message
-        async with entry.processing_lock:
-            # Build a simple context from last user messages
-            messages = await _DB.get_messages_for_session(entry.session_id, limit=20)
+
+        # Build a simple context from last user messages
+        messages = await _DB.get_messages_for_session(entry.session_id, limit=20)
         
         last_messages = messages[:10]  # Only get 10 last messages for context
         

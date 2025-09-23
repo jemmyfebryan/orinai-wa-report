@@ -17,6 +17,9 @@ load_dotenv(override=True)
 
 OPEN_WA_PORT = os.getenv("OPEN_WA_PORT")
 
+def printResponse(message):
+    print(message)
+
 async def run_bot():
     global wa_client
     
@@ -25,12 +28,14 @@ async def run_bot():
         lambda: SocketClient(f"http://172.17.0.1:{OPEN_WA_PORT}/", api_key="my_secret_api_key")
     )
     bot = ChatBotHandler(client)
+    # client.sendText("6285850434383@c.us", "tes juga", None, True)
+    # client.sendSeen("6285850434383@c.us")
     
     register_conv_handler(bot=bot)
 
     @bot.on(r"^Verifikasi ORIN Alert: ")
     async def verify_wa_bot(msg, client, history):
-        if not msg["data"]["isGroupMsg"]:
+        if not msg["data"]["isGroupMsg"] and msg["data"]["fromMe"] == False:
             # See/Read the Message
             client.sendSeen(msg["data"]["from"])
             

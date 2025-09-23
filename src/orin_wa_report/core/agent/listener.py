@@ -25,24 +25,18 @@ class ChatBotHandler:
         self.client = client
         self.routes = []   # list of (pattern, handler)
         self.fallback = None
-        self.memory = {}   # per-user context
 
         self.loop = asyncio.get_event_loop()  # capture main loop
 
         async def wrapper(msg):
             text = msg["data"].get("body", "")
-            user = msg["data"].get("from")
-
-            if user not in self.memory:
-                self.memory[user] = []
-            self.memory[user].append(text)
 
             for pattern, handler in self.routes:
                 if re.search(pattern, text, re.IGNORECASE):
-                    return await self._call_handler(handler, msg, user)
+                    return await self._call_handler(handler, msg)
 
             if self.fallback:
-                return await self._call_handler(self.fallback, msg, user)
+                return await self._call_handler(self.fallback, msg)
 
         def sync_wrapper(msg):
             # Schedule wrapper safely on the main loop
@@ -50,12 +44,11 @@ class ChatBotHandler:
 
         self.client.onAnyMessage(sync_wrapper)
 
-    async def _call_handler(self, handler, msg, user):
-        history = self.memory[user]
+    async def _call_handler(self, handler, msg):
         if inspect.iscoroutinefunction(handler):
-            return await handler(msg, self.client, history)
+            return await handler(msg, self.client)
         else:
-            return handler(msg, self.client, history)
+            return handler(msg, self.client)
 
     def on(self, pattern):
         def decorator(fn):
