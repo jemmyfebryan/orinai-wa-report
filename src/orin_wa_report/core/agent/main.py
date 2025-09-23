@@ -41,14 +41,21 @@ async def run_bot():
     logger.info("🚀 Starting WhatsApp bot...")
     client = await init_openwa_client()
     bot = ChatBotHandler(client)
-    # client.sendText("6285850434383@c.us", "tes juga", None, True)
-    # client.sendSeen("6285850434383@c.us")
+    
+    # DEBUG: Log bot initialization
+    logger.debug("⚙️ Bot initialized, registering handlers...")
     
     register_conv_handler(bot=bot)
 
     @bot.on(r"^Verifikasi ORIN Alert: ")
     async def verify_wa_bot(msg, client, history):
+        # DEBUG: Log message received
+        logger.debug(f"📨 Received message: {msg['data']['body']}")
+        
         if not msg["data"]["isGroupMsg"] and msg["data"]["fromMe"] == False:
+            # DEBUG: Log message passed conditions
+            logger.debug("✅ Message passed group/fromMe checks")
+            
             # See/Read the Message
             client.sendSeen(msg["data"]["from"])
             
@@ -56,7 +63,7 @@ async def run_bot():
             user_name = msg["data"].get("sender").get("pushname", "")
             message = msg["data"].get("body", "")
             
-            logger.info(f"User {user_name} with number: {phone_number} verifying ORIN alert: {message}")
+            logger.info(f"👤 User {user_name} ({phone_number}) verifying ORIN alert: {message}")
             
             # Fetch key
             regex_match = re.match(r"^Verifikasi ORIN Alert: (\S+)$", message)
@@ -78,6 +85,9 @@ async def run_bot():
             await client.sendText(msg["data"]["from"], response)
 
     logger.info("✅ Bot is running. Waiting for messages...")
+    
+    # DEBUG: Log handler registration
+    logger.debug(f"⏳ Registered handlers: {list(bot._handlers.keys())}")
 
     # Graceful shutdown handler
     async def shutdown():

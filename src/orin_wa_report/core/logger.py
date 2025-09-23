@@ -1,5 +1,6 @@
 import logging
 import sys
+import os
 
 # ANSI escape codes for colors
 COLOR_CODES = {
@@ -20,12 +21,16 @@ class ColorFormatter(logging.Formatter):
 
 def get_logger(name=__name__, service: str = None):
     logger = logging.getLogger(name)
+    
+    # Get log level from environment variable, default to INFO
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, log_level, logging.INFO)
 
     if not logger.hasHandlers():
-        logger.setLevel(logging.INFO)
+        logger.setLevel(level)
 
         handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(logging.INFO)
+        handler.setLevel(level)
 
         # Include service in format if provided
         service_fmt = f"[{service}] " if service else ""
