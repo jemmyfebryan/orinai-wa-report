@@ -20,13 +20,26 @@ OPEN_WA_PORT = os.getenv("OPEN_WA_PORT")
 def printResponse(message):
     print(message)
 
+async def init_openwa_client() -> SocketClient:
+    """
+    Initialize the OpenWA SocketClient in a non-blocking way.
+    Returns the initialized client instead of using a global.
+    """
+    loop = asyncio.get_event_loop()
+
+    def blocking_init():
+        client = SocketClient(
+            f"http://172.17.0.1:{OPEN_WA_PORT}/",
+            api_key="my_secret_api_key",
+        )
+        return client
+
+    client = await loop.run_in_executor(None, blocking_init)
+    return client
+
 async def run_bot():
-    global wa_client
-    
     logger.info("🚀 Starting WhatsApp bot...")
-    client = await asyncio.to_thread(
-        lambda: SocketClient(f"http://172.17.0.1:{OPEN_WA_PORT}/", api_key="my_secret_api_key")
-    )
+    client = await init_openwa_client()
     bot = ChatBotHandler(client)
     # client.sendText("6285850434383@c.us", "tes juga", None, True)
     # client.sendSeen("6285850434383@c.us")
