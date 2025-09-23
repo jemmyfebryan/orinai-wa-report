@@ -87,7 +87,7 @@ async def run_bot():
     logger.info("✅ Bot is running. Waiting for messages...")
     
     # DEBUG: Log handler registration
-    logger.debug(f"⏳ Registered handlers: {list(bot._handlers.keys())}")
+    # logger.debug(f"⏳ Registered handlers: {list(bot._handlers.keys())}")
 
     # Graceful shutdown handler
     async def shutdown():
