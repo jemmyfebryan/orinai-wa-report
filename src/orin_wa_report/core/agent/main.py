@@ -52,7 +52,7 @@ async def run_bot():
     register_conv_handler(bot=bot)
 
     @bot.on(r"^Verifikasi ORIN Alert: ")
-    async def verify_wa_bot(msg, client, history):
+    async def verify_wa_bot(msg, client):
         # DEBUG: Log message received
         logger.debug(f"📨 Received message: {msg['data']['body']}")
         

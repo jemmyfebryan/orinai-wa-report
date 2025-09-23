@@ -627,7 +627,7 @@ def register_conv_handler(bot):
     The handler simply forwards messages to chat_response.
     """
     @bot.on(r"^chat")
-    async def conv_handler(msg, client, history):
+    async def conv_handler(msg, client):
         # we ignore group messages here
         if msg.get("data", {}).get("isGroupMsg") or msg["data"]["fromMe"]:
             return
