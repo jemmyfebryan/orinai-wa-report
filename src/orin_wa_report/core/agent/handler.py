@@ -540,9 +540,26 @@ async def chat_response(
     
         # Acquire lock to process this message
         async with entry.processing_lock:
+            # Start typing indicator after 1 second
+            typing_task = asyncio.create_task(asyncio.sleep(1))
+            
+            async def start_typing():
+                """Start simulating typing after 1 second delay"""
+                try:
+                    await typing_task
+                    client.simulateTyping(phone_jid, True)
+                    logger.debug(f"Started typing indicator for {phone_jid}")
+                except asyncio.CancelledError:
+                    # Typing was cancelled before starting (response was fast)
+                    pass
+                except Exception:
+                    logger.exception("Failed to start typing indicator")
+            
+            typing_handler = asyncio.create_task(start_typing())
+            
             # Build a simple context from last user messages
             messages = await _DB.get_messages_for_session(entry.session_id, limit=20)
-        
+            
             last_messages = messages[:10]  # Only get 10 last messages for context
             
             last_message = messages[0]
@@ -561,35 +578,74 @@ async def chat_response(
             
             # POST to ORIN AI Chat
             logger.info(f"POST to ORIN AI Chat with token: {api_token}")
-            async with httpx.AsyncClient(timeout=90.0) as httpx_client:
-                response = await httpx_client.post(
-                    ORINAI_CHAT_ENDPOINT,
-                    json={
-                        "messages": llm_messages
-                    },
-                    headers={"X-Api-Token": api_token}
-                )
-            response.raise_for_status()
-            logger.info(f"Raw status code: {response.status_code}")
-            logger.info(f"Raw response text: {response.text}")
+            
+            # Create an event to track if the waiting message was sent
+            waiting_message_sent = False
+            
+            async def send_waiting_message():
+                """Send waiting message after 10 seconds if processing is not complete"""
+                nonlocal waiting_message_sent
+                await asyncio.sleep(10)
+                if not waiting_message_sent:
+                    try:
+                        # Stop typing before sending waiting message
+                        client.simulateTyping(phone_jid, False)
+                        
+                        waiting_text = "Tunggu sebentar, ORIN AI sedang memproses balasan kamu"
+                        client.sendText(phone_jid, waiting_text)
+                        await _DB.add_message(entry.session_id, sender="bot", body=waiting_text)
+                        waiting_message_sent = True
+                    except Exception:
+                        logger.exception("Failed to send waiting message")
+            
+            # Start the waiting message timer
+            waiting_task = asyncio.create_task(send_waiting_message())
+            
+            try:
+                async with httpx.AsyncClient(timeout=90.0) as httpx_client:
+                    response = await httpx_client.post(
+                        ORINAI_CHAT_ENDPOINT,
+                        json={
+                            "messages": llm_messages
+                        },
+                        headers={"X-Api-Token": api_token}
+                    )
+                response.raise_for_status()
+                logger.info(f"Raw status code: {response.status_code}")
+                logger.info(f"Raw response text: {response.text}")
 
-            response_json: Dict = response.json()
-            logger.info(f"Parsed JSON: {response_json}")
+                response_json: Dict = response.json()
+                logger.info(f"Parsed JSON: {response_json}")
+                    
+                reply = response_json.get("data", {}).get("response")
+                if not reply:
+                    logger.warning(f"Unexpected API response: {response_json}")
+                    reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
                 
-            reply = response_json.get("data", {}).get("response")
-            if not reply:
-                logger.warning(f"Unexpected API response: {response_json}")
-                reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
-            
-            logger.info(f"ORIN AI Chat Reply: {reply}")
-            
-            # Parse from Marksdown style to Whatsapp style
-            reply = markdown_to_whatsapp(reply)
-            
-            logger.info(f"Parsed to WA Style")
-            
-            if not reply:
-                reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
+                logger.info(f"ORIN AI Chat Reply: {reply}")
+                
+                # Parse from Marksdown style to Whatsapp style
+                reply = markdown_to_whatsapp(reply)
+                
+                logger.info(f"Parsed to WA Style")
+                
+                if not reply:
+                    reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
+            finally:
+                # Cancel typing tasks
+                typing_task.cancel()
+                typing_handler.cancel()
+                
+                # Always stop typing indicator
+                try:
+                    client.simulateTyping(phone_jid, False)
+                except Exception:
+                    logger.exception("Failed to stop typing indicator")
+                
+                # Ensure the waiting task is cancelled if it's still running
+                waiting_task.cancel()
+                # Mark waiting message as sent to prevent duplicate sends
+                waiting_message_sent = True
     except Exception as e:
         logger.exception("Error in response chat (type=%s): %r", type(e).__name__, e)
         reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."

@@ -39,11 +39,7 @@ async def init_openwa_client() -> SocketClient:
 
 async def run_bot():
     logger.info("🚀 Starting WhatsApp bot...")
-    client = SocketClient(
-        f"http://172.17.0.1:{OPEN_WA_PORT}/",
-        api_key="my_secret_api_key",
-    )
-    # client = await init_openwa_client()
+    client = await init_openwa_client()
     bot = ChatBotHandler(client)
     
     # DEBUG: Log bot initialization
@@ -52,7 +48,7 @@ async def run_bot():
     register_conv_handler(bot=bot)
 
     @bot.on(r"^Verifikasi ORIN Alert: ")
-    async def verify_wa_bot(msg, client):
+    async def verify_wa_bot(msg, client, history):
         # DEBUG: Log message received
         logger.debug(f"📨 Received message: {msg['data']['body']}")
         
