@@ -543,53 +543,53 @@ async def chat_response(
             # Build a simple context from last user messages
             messages = await _DB.get_messages_for_session(entry.session_id, limit=20)
         
-        last_messages = messages[:10]  # Only get 10 last messages for context
-        
-        last_message = messages[0]
-        logger.info(f"Get last message: {last_message}")
-        
-        # Build LLm messages, reversed because 'messages' is most recent first
-        llm_messages = [
-            {
-                "role": "assistant" if m["sender"] == "bot" else "user",
-                "content": m["body"]
-            }
-            for m in reversed(last_messages)
-        ]
-        
-        logger.info(f"Get LLM message: {llm_messages[0]}")
-        
-        # POST to ORIN AI Chat
-        logger.info(f"POST to ORIN AI Chat with token: {api_token}")
-        async with httpx.AsyncClient(timeout=90.0) as httpx_client:
-            response = await httpx_client.post(
-                ORINAI_CHAT_ENDPOINT,
-                json={
-                    "messages": llm_messages
-                },
-                headers={"X-Api-Token": api_token}
-            )
-        response.raise_for_status()
-        logger.info(f"Raw status code: {response.status_code}")
-        logger.info(f"Raw response text: {response.text}")
-
-        response_json: Dict = response.json()
-        logger.info(f"Parsed JSON: {response_json}")
+            last_messages = messages[:10]  # Only get 10 last messages for context
             
-        reply = response_json.get("data", {}).get("response")
-        if not reply:
-            logger.warning(f"Unexpected API response: {response_json}")
-            reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
-        
-        logger.info(f"ORIN AI Chat Reply: {reply}")
-        
-        # Parse from Marksdown style to Whatsapp style
-        reply = markdown_to_whatsapp(reply)
-        
-        logger.info(f"Parsed to WA Style")
-        
-        if not reply:
-            reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
+            last_message = messages[0]
+            logger.info(f"Get last message: {last_message}")
+            
+            # Build LLm messages, reversed because 'messages' is most recent first
+            llm_messages = [
+                {
+                    "role": "assistant" if m["sender"] == "bot" else "user",
+                    "content": m["body"]
+                }
+                for m in reversed(last_messages)
+            ]
+            
+            logger.info(f"Get LLM message: {llm_messages[0]}")
+            
+            # POST to ORIN AI Chat
+            logger.info(f"POST to ORIN AI Chat with token: {api_token}")
+            async with httpx.AsyncClient(timeout=90.0) as httpx_client:
+                response = await httpx_client.post(
+                    ORINAI_CHAT_ENDPOINT,
+                    json={
+                        "messages": llm_messages
+                    },
+                    headers={"X-Api-Token": api_token}
+                )
+            response.raise_for_status()
+            logger.info(f"Raw status code: {response.status_code}")
+            logger.info(f"Raw response text: {response.text}")
+
+            response_json: Dict = response.json()
+            logger.info(f"Parsed JSON: {response_json}")
+                
+            reply = response_json.get("data", {}).get("response")
+            if not reply:
+                logger.warning(f"Unexpected API response: {response_json}")
+                reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
+            
+            logger.info(f"ORIN AI Chat Reply: {reply}")
+            
+            # Parse from Marksdown style to Whatsapp style
+            reply = markdown_to_whatsapp(reply)
+            
+            logger.info(f"Parsed to WA Style")
+            
+            if not reply:
+                reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
     except Exception as e:
         logger.exception("Error in response chat (type=%s): %r", type(e).__name__, e)
         reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
