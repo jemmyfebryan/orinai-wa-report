@@ -39,7 +39,11 @@ async def init_openwa_client() -> SocketClient:
 
 async def run_bot():
     logger.info("🚀 Starting WhatsApp bot...")
-    client = await init_openwa_client()
+    client = SocketClient(
+        f"http://172.17.0.1:{OPEN_WA_PORT}/",
+        api_key="my_secret_api_key",
+    )
+    # client = await init_openwa_client()
     bot = ChatBotHandler(client)
     
     # DEBUG: Log bot initialization
@@ -86,9 +90,6 @@ async def run_bot():
 
     logger.info("✅ Bot is running. Waiting for messages...")
     
-    # DEBUG: Log handler registration
-    # logger.debug(f"⏳ Registered handlers: {list(bot._handlers.keys())}")
-
     # Graceful shutdown handler
     async def shutdown():
         logger.info("🛑 Shutting down socket client...")
