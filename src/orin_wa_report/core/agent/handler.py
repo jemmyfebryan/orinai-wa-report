@@ -38,14 +38,15 @@ import uuid
 import json
 import re
 import httpx
+import copy
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 from openai import OpenAI
+            
+from src.orin_wa_report.core.agent.llm import get_question_class
+from src.orin_wa_report.core.agent.config import question_class_details
 
-from src.orin_wa_report.core.development.verify_wa import (
-    verify_wa_key_and_store_wa_number
-)
 from src.orin_wa_report.core.utils import get_db_query_endpoint
 from src.orin_wa_report.core.logger import get_logger
 
@@ -57,6 +58,7 @@ load_dotenv(override=True)
 
 db_api_key = os.getenv("ORIN_DB_API_KEY")
 APP_STAGE = os.getenv("APP_STAGE", "development")
+BOT_PHONE_NUMBER = os.getenv("BOT_PHONE_NUMBER", "")
 
 ORINAI_CHAT_ENDPOINT = os.getenv("ORINAI_CHAT_ENDPOINT")
 
@@ -177,7 +179,7 @@ class ChatDB:
             )
             self._conn.commit()
         await self._run(_end)
-
+        
     async def get_session_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
         def _get():
             cur = self._conn.cursor()
@@ -190,6 +192,31 @@ class ChatDB:
                 return None
             keys = ["id","phone","user_name","started_at","last_activity","status","ended_at"]
             return dict(zip(keys, row))
+        return await self._run(_get)
+
+    async def get_sessions_by_phone(self, phone: str, limit: int = None) -> List[Dict[str, Any]]:
+        """Get all sessions for a phone number, ordered by started_at ascending"""
+        def _get():
+            cur = self._conn.cursor()
+            cur.execute(
+                """
+SELECT *
+FROM (
+  SELECT id, phone, user_name, started_at, last_activity, status, ended_at
+  FROM sessions
+  WHERE phone = ?
+  ORDER BY started_at DESC
+  LIMIT ?
+) AS latest
+ORDER BY started_at ASC;
+""",
+                (phone, limit)
+            )
+            rows = cur.fetchall()
+            if not rows:
+                return []
+            keys = ["id","phone","user_name","started_at","last_activity","status","ended_at"]
+            return [dict(zip(keys, row)) for row in rows]
         return await self._run(_get)
 
     async def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -497,6 +524,22 @@ def markdown_to_whatsapp(text: str) -> str:
 
     return text
 
+async def get_agent_id():
+    async with httpx.AsyncClient(timeout=5.0) as httpx_client:
+        response = await httpx_client.get(
+            f"{ORINAI_CHAT_ENDPOINT}/whatsapp/number"
+        )
+    response.raise_for_status()
+    
+    response_json: List[Dict] = response.json()
+    
+    bot_details = [val for val in response_json if val.get("phone_number") == BOT_PHONE_NUMBER]
+    bot_agent_id = bot_details[0].get("agent_id")
+    
+    logger.info(f"Use Agent ID: {bot_agent_id}")
+    
+    return bot_agent_id
+
 async def chat_response(
     msg: Dict[str, Any],
     client,
@@ -599,10 +642,6 @@ async def chat_response(
             
             logger.info(f"Get LLM message: {llm_messages[0]}")
             
-            import copy
-            from src.orin_wa_report.core.agent.llm import get_question_class
-            from src.orin_wa_report.core.agent.config import question_class_details
-            
             # WhatsApp Agent Question Classes
             question_class_result = await get_question_class(
                 openai_client=openai_client,
@@ -650,11 +689,14 @@ async def chat_response(
             waiting_task = asyncio.create_task(send_waiting_message())
             
             try:
+                bot_agent_id = await get_agent_id()
+                
                 async with httpx.AsyncClient(timeout=90.0) as httpx_client:
                     response = await httpx_client.post(
-                        ORINAI_CHAT_ENDPOINT,
+                        f"{ORINAI_CHAT_ENDPOINT}/chat_api",
                         json={
-                            "messages": llm_messages
+                            "messages": llm_messages,
+                            "agent_id": bot_agent_id,
                         },
                         headers={"X-Api-Token": api_token}
                     )
@@ -720,7 +762,9 @@ async def chat_response(
 # Exported helper to register decorator handler from main.py
 # -----------------------------
 
-def register_conv_handler(bot):
+from src.orin_wa_report.core.agent.verification import verify_wa_bot
+
+def register_conv_handler(bot, openai_client: OpenAI):
     """Registers a on-message handler for r"^conv" on the provided ChatBotHandler instance.
 
     Usage (in your main.py after creating `bot = ChatBotHandler(client)`):
@@ -730,8 +774,19 @@ def register_conv_handler(bot):
 
     The handler simply forwards messages to chat_response.
     """
-    @bot.on(r"^")
+    @bot.on(r"")
     async def conv_handler(msg, client):
+        # FILTERS
+        ## CHECK if the message is ORIN Verifier
+        if msg["data"].get("body").startswith(
+            "Halo ORIN, saya ingin melakukan verifikasi akun ORIN AI."
+        ):
+            await verify_wa_bot(
+                msg=msg,
+                client=client
+            )
+            return
+        
         # we ignore group messages here
         if msg.get("data", {}).get("isGroupMsg") or msg["data"]["fromMe"]:
             return
@@ -774,24 +829,10 @@ def register_conv_handler(bot):
         await chat_response(
             msg=msg,
             client=client,
-            api_token=api_token
+            api_token=api_token,
+            openai_client=openai_client
         )
 
 # -----------------------------
 # Minimal placeholder for existing import in your main.py
 # -----------------------------
-async def handler_verify_wa(
-    wa_key: str,
-    phone_number: str,
-    user_name: str
-) -> str:
-    try:
-        result = await verify_wa_key_and_store_wa_number(
-            wa_key=wa_key,
-            wa_number=phone_number
-        )
-        logger.info(f"WA Verification Result for {phone_number}: {json.dumps(result, indent=2)}")
-        return f"Halo {user_name}, verifikasi ORIN Alert anda berhasil!"
-    except Exception as e:
-        logger.error(f"WA Verification for {phone_number} error: {str(e)}")
-        return "Maaf, terjadi kesalahan saat verifikasi. Silakan coba lagi."

@@ -2,7 +2,7 @@ from wa_automate_socket_client import SocketClient
 
 NUMBER = 'TEST_PHONE_NUMBER@c.us'
 
-client = SocketClient('http://localhost:8085/', 'my_secret_api_key')
+client = SocketClient('http://localhost:8003/', 'my_secret_api_key')
 
 
 def printResponse(message):

@@ -1,5 +1,6 @@
 import uuid
 import os
+import urllib.parse
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 
@@ -109,10 +110,9 @@ async def create_user(payload: CreateUser):
             response = await client.post(url_prod, json={
                 "query": """
                     SELECT id, api_token
-                    FROM users
+                    FROM user_tokens
                     WHERE
-                        id = :id
-                        AND deleted_at IS NULL
+                        user_id = :id
                     LIMIT 1
                 """,
                 "params": {"id": mimic_user}
@@ -152,7 +152,7 @@ async def create_user(payload: CreateUser):
         "id": result.get("user_id"),
         "name": payload.name,
         "email": payload.email or f"{payload.name.lower().replace(' ','.')}@example.com",
-        "api_token": str(uuid.uuid4()),
+        "api_token": mimic_token,
         "wa_key": None,
         "wa_notif": 1 if payload.verified else 0,
         "wa_number": payload.wa_number or "",
@@ -235,8 +235,10 @@ async def verify_user(token: str = Depends(get_bearer_token)):
         wa_key_response = await generate_and_store_wa_key(user_id=user_id)
         wa_key = wa_key_response.get("wa_key")
         
-        wa_message = f"Verifikasi ORIN Alert: {wa_key}"
-        wa_url = f'https://wa.me/{BOT_PHONE_NUMBER}?text={wa_message}'
+        wa_message = f"Halo ORIN, saya ingin melakukan verifikasi akun ORIN AI.\n\nKode verifikasi saya adalah:\n*[{wa_key}]*\n\nMohon untuk *tidak mengubah* pesan ini."
+        encoded_wa_message = urllib.parse.quote(wa_message)
+        
+        wa_url = f'https://wa.me/{BOT_PHONE_NUMBER}?text={encoded_wa_message}'
         return {
             "ok": True,
             "status": "success",

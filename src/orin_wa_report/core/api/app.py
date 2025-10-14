@@ -1,9 +1,10 @@
 import os
 import asyncio
-import httpx
+import base64
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 
+import httpx
 import yaml
 from fastapi import FastAPI, Request, HTTPException, Header, Response
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -12,6 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from wa_automate_socket_client import SocketClient
 
+# Import ChatDB for session management
+from src.orin_wa_report.core.agent.handler import ChatDB, DB_PATH
 from src.orin_wa_report.core.api.routers.demo import router as demo_router
 from src.orin_wa_report.core.api.routers.alert import router as alert_router
 from src.orin_wa_report.core.api.utils import (
@@ -40,9 +43,15 @@ logger = get_logger(__name__, service="FastAPI")
 # FastAPI App
 app = FastAPI()
 
+# Initialize ChatDB for session management
+chat_db = ChatDB(DB_PATH)
+
 # Periodic Task
 @app.on_event("startup")
 async def start_background_task():
+    # Initialize chat database
+    await chat_db.initialize()
+    
     # Initialize openwa_client
     asyncio.create_task(init_openwa_client())
     
@@ -237,3 +246,135 @@ def apply_settings(payload: ApplySettings):
     }
     
     return {"ok": True, "settings": settings}
+
+# New routes for chat history and sessions
+@app.get("/whatsapp/chat_history/{phone_number}")
+async def get_chat_history(phone_number: str):
+    """
+    Fetch ALL chat history for a phone number across all sessions
+    Returns: List of messages with session markers and timestamps
+    """
+    # Get all sessions for this phone number
+    sessions = await chat_db.get_sessions_by_phone(phone_number, limit=5)
+    if not sessions:
+        return []
+    
+    # Format messages with session markers
+    openai_messages = []
+    for session in sessions:
+        # Add session marker
+        openai_messages.append({
+            "role": "session",
+            "content": session['id']
+        })
+        
+        # Get messages for this session
+        messages = await chat_db.get_messages_for_session(session['id'])
+        # Sort messages by timestamp (oldest first)
+        messages.sort(key=lambda x: x['timestamp'])
+        for msg in messages:
+            role = "assistant" if msg['sender'] == 'bot' else 'user'
+            openai_messages.append({
+                "role": role,
+                "content": msg['body'],
+                "timestamp": msg['timestamp']
+            })
+    
+    return openai_messages
+
+@app.get("/whatsapp/contacts")
+async def get_contacts():
+    """
+    Fetch all phone numbers that have chat history
+    Returns: List of dicts with key "phone_number"
+    """
+    # Query distinct phone numbers from sessions
+    def _get_phones():
+        cur = chat_db._conn.cursor()
+        cur.execute("SELECT DISTINCT phone FROM sessions")
+        return [row[0] for row in cur.fetchall()]
+    
+    phones = await chat_db._run(_get_phones)
+    return [{"phone_number": phone} for phone in phones]
+
+@app.get("/whatsapp/sessions/{phone_number}")
+async def get_sessions(phone_number: str):
+    """
+    Fetch all session IDs for a phone number
+    Returns: List of session IDs (strings)
+    """
+    # Query sessions for phone number
+    def _get_sessions():
+        cur = chat_db._conn.cursor()
+        cur.execute(
+            "SELECT id FROM sessions WHERE phone = ? ORDER BY started_at DESC",
+            (phone_number,)
+        )
+        return [row[0] for row in cur.fetchall()]
+    
+    session_ids = await chat_db._run(_get_sessions)
+    return session_ids
+
+@app.get("/whatsapp/chat_history_by_session/{session_id}")
+async def get_chat_history_by_session(session_id: str):
+    """
+    Fetch chat history by session ID in OpenAI format with timestamps
+    Returns: List of messages with 'role', 'content', and 'timestamp'
+    """
+    messages = await chat_db.get_messages_for_session(session_id)
+    if not messages:
+        return []
+    
+    # Format messages for OpenAI with timestamps
+    openai_messages = []
+    # Sort messages by timestamp (oldest first)
+    messages.sort(key=lambda x: x['timestamp'])
+    for msg in messages:
+        role = "assistant" if msg['sender'] == 'bot' else 'user'
+        openai_messages.append({
+            "role": role,
+            "content": msg['body'],
+            "timestamp": msg['timestamp']
+        })
+    
+    return openai_messages
+
+
+@app.get("/whatsapp/profile/{phone_number}")
+async def get_profile(phone_number: str):
+    """
+    Fetch ALL chat history for a phone number across all sessions
+    Returns: List of messages with session markers and timestamps
+    """
+    
+    global openwa_client
+    
+    contact_details = openwa_client.getContact(f"{phone_number}@c.us")
+    
+    profile_url = contact_details.get("profilePicThumbObj").get("eurl")
+    contact_name = contact_details.get("name")
+    
+    push_name = contact_details.get("pushname")
+    is_business = "Yes" if contact_details.get("isBusiness") else "No"
+    is_my_contact = "Yes" if contact_details.get("isMyContact") else "No"
+    
+    description = f"Push Name: {push_name}, Business Account: {is_business}, In Contact: {is_my_contact}"
+    
+    # async with httpx.AsyncClient() as client:
+    #     response = await client.get(profile_url)
+    #     response.raise_for_status()
+    #     image_bytes = response.content
+
+    #     # Convert to Base64
+    #     image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+
+    #     # Try to detect MIME type from headers
+    #     mime_type = response.headers.get("Content-Type", "image/jpeg")
+    #     profile_image = f"data:{mime_type};base64,{image_base64}"
+    
+    # Placeholder
+    return {
+        "profile_image": profile_url,
+        "contact_name": contact_name,
+        "description": description
+    }
