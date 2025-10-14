@@ -41,6 +41,8 @@ import httpx
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
+from openai import OpenAI
+
 from src.orin_wa_report.core.development.verify_wa import (
     verify_wa_key_and_store_wa_number
 )
@@ -432,6 +434,26 @@ class SessionManager:
             return
         except Exception:
             logger.exception("Error in forced watcher for session %s", entry.session_id)
+            
+    async def end_session(self, phone: str, client, reason: str = "ended"):
+        """Manually end a user session."""
+        async with self._lock:
+            entry = self._sessions.get(phone)
+            if not entry:
+                return False
+            try:
+                await self.db.end_session(entry.session_id, ended_at=int(time.time()), status=reason)
+            except Exception:
+                logger.exception("Failed to end session in DB")
+                return False
+            try:
+                client.sendText(entry.jid, "Terima kasih telah menghubungi ORIN AI Chat. Jika Anda butuh bantuan di lain waktu, silakan chat kembali.")
+            except Exception:
+                logger.exception("Failed to send session end message")
+            await self._cancel_tasks(entry)
+            self._sessions.pop(phone, None)
+            logger.info(f"Session {entry.session_id} for {phone} ended manually with reason: {reason}")
+            return True
 
 # -----------------------------
 # Module-level singletons
@@ -479,6 +501,7 @@ async def chat_response(
     msg: Dict[str, Any],
     client,
     api_token: str,
+    openai_client: OpenAI,
     history=None
 ) -> str:
     """
@@ -575,6 +598,31 @@ async def chat_response(
             ]
             
             logger.info(f"Get LLM message: {llm_messages[0]}")
+            
+            import copy
+            from src.orin_wa_report.core.agent.llm import get_question_class
+            from src.orin_wa_report.core.agent.config import question_class_details
+            
+            # WhatsApp Agent Question Classes
+            question_class_result = await get_question_class(
+                openai_client=openai_client,
+                messages=llm_messages,
+                question_class_details=question_class_details
+            )
+            question_class_dict = copy.deepcopy(question_class_details)
+            for cr in question_class_result:
+                question_class_dict = question_class_dict.get(cr)
+                if "subclass" in question_class_dict.keys():
+                    question_class_dict = question_class_dict.get("subclass")
+                    
+            question_class_tools: str = question_class_dict.get("tools")
+                
+            logger.info(f"Question class dict: {question_class_dict}")
+        
+            if question_class_tools == "end_session":
+                logger.info("User want to end session by chat")
+                await _SESSION_MANAGER.end_session(phone=phone, client=client)
+                return           
             
             # POST to ORIN AI Chat
             logger.info(f"POST to ORIN AI Chat with token: {api_token}")
@@ -682,7 +730,7 @@ def register_conv_handler(bot):
 
     The handler simply forwards messages to chat_response.
     """
-    @bot.on(r"^chat")
+    @bot.on(r"^")
     async def conv_handler(msg, client):
         # we ignore group messages here
         if msg.get("data", {}).get("isGroupMsg") or msg["data"]["fromMe"]:
