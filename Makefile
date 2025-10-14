@@ -1,4 +1,4 @@
-# Makefile for FastAPI project (with optional Docker)
+# Makefile for FastAPI project (with optional Docker or PM2)
 
 # ----------------------------
 # Variables
@@ -7,6 +7,7 @@ IMAGE_NAME=orinai-wa-report-app
 PORT=8000
 CONTAINER_NAME=orinai-wa-report-container
 USE_DOCKER ?= false
+APP_NAME=orinai-wa-report
 
 # Python virtual environment settings (for non-Docker runs)
 VENV_DIR=.venv
@@ -23,7 +24,6 @@ docker-build:
 	docker build -t $(IMAGE_NAME) .
 
 docker-run:
-	# Stop and remove any existing container with the same name before running a new one
 	-docker stop $(CONTAINER_NAME) 2>/dev/null || true
 	-docker rm $(CONTAINER_NAME) 2>/dev/null || true
 	docker run -d --env-file .env -p $(PORT):$(PORT) --name $(CONTAINER_NAME) $(IMAGE_NAME)
@@ -49,8 +49,24 @@ venv:
 	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements.txt
 
+# Run app in foreground
 local-run:
 	$(PYTHON) -m src.orin_wa_report.main
+
+# Run app using PM2 (background)
+pm2-run:
+	pm2 start $(PYTHON) --name $(APP_NAME) -- -m src.orin_wa_report.main
+	pm2 save
+
+pm2-stop:
+	pm2 stop $(APP_NAME) || true
+	pm2 delete $(APP_NAME) || true
+
+pm2-logs:
+	pm2 logs $(APP_NAME)
+
+pm2-restart:
+	pm2 restart $(APP_NAME)
 
 local-test:
 	$(PYTHON) -m pytest tests/
@@ -76,12 +92,14 @@ run:
 ifeq ($(USE_DOCKER),true)
 	$(MAKE) docker-run
 else
-	$(MAKE) local-run
+	$(MAKE) pm2-run
 endif
 
 stop:
 ifeq ($(USE_DOCKER),true)
 	$(MAKE) docker-stop
+else
+	$(MAKE) pm2-stop
 endif
 
 remove:
@@ -92,6 +110,8 @@ endif
 logs:
 ifeq ($(USE_DOCKER),true)
 	$(MAKE) docker-logs
+else
+	$(MAKE) pm2-logs
 endif
 
 shell:
@@ -106,9 +126,13 @@ rebuild:
 	$(MAKE) run
 
 restart:
-	$(MAKE) stop
-	$(MAKE) remove
-	$(MAKE) run
+ifeq ($(USE_DOCKER),true)
+	$(MAKE) docker-stop
+	$(MAKE) docker-remove
+	$(MAKE) docker-run
+else
+	$(MAKE) pm2-restart
+endif
 
 test:
 ifeq ($(USE_DOCKER),true)
