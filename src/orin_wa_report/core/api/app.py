@@ -1,6 +1,7 @@
 import os
 import asyncio
 import base64
+import random
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 
@@ -29,6 +30,8 @@ from src.orin_wa_report.core.logger import get_logger
 
 from dotenv import load_dotenv
 load_dotenv(override=True)
+
+ORINAI_CHAT_ENDPOINT = os.getenv("ORINAI_CHAT_ENDPOINT")
 
 # YAML Config
 with open('config.yaml', 'r') as file:
@@ -378,3 +381,33 @@ async def get_profile(phone_number: str):
         "contact_name": contact_name,
         "description": description
     }
+    
+@app.post("/whatsapp/dummy_notification")
+async def wa_dummy_notification(request: Request):
+    data = await request.json()
+    to = data.get("to")
+    to = f"{to}@c.us"
+    alert_type: str = data.get("alert_type")
+    
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{ORINAI_CHAT_ENDPOINT}/notification_setting")
+        resp_json: List[Dict] = resp.json()
+        
+    alert_setting = [val for val in resp_json if val.get("setting") == f"prompt_{alert_type}"]
+    if len(alert_setting) == 0:
+        alert_setting = [val for val in resp_json if val.get("setting") == "prompt_default"]
+    alert_setting = alert_setting[0]
+    
+    prompt_device_name = random.choice(["Truk", "Pesawat", "Bis", "Sepeda"])
+    prompt_message = (alert_type.replace("_", " ").replace("-", "")).title()
+        
+    message_final = alert_setting["value"].format(device_name=prompt_device_name, message=prompt_message)
+    
+    if openwa_client is None:
+        raise HTTPException(status_code=503, detail="WhatsApp client not ready")
+
+    try:
+        openwa_client.sendText(to, message_final)
+        return {"status": "success", "to": to, "message": message_final}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
