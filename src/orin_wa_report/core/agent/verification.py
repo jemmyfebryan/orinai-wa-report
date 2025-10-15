@@ -41,7 +41,8 @@ async def verify_wa_bot(msg, client):
         logger.info(f"👤 User {user_name} ({phone_number}) verifying ORIN alert: {message}")
         
         # Fetch key
-        regex_match = re.search(r"\*\[([A-Za-z0-9]+)\]\*", message)
+        # regex_match = re.search(r"\*\[([A-Za-z0-9]+)\]\*", message)
+        regex_match = re.search(r"^Halo ORIN, saya ingin melakukan verifikasi akun ORIN AI\.[\s\S]*?\*\[(.*?)\]\*", message)
 
         if regex_match:
             key = regex_match.group(1)
