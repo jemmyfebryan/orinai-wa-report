@@ -354,10 +354,12 @@ async def get_profile(phone_number: str):
     
     contact_details = openwa_client.getContact(f"{phone_number}@c.us")
     
-    profile_url = contact_details.get("profilePicThumbObj").get("eurl")
-    contact_name = contact_details.get("name")
+    profile_url = contact_details.get("profilePicThumbObj", "")
+    # logger.info(f"Profile Url: {profile_url}")
+    if profile_url: profile_url = profile_url.get("eurl")
+    contact_name = contact_details.get("name", "Unnamed")
     
-    push_name = contact_details.get("pushname")
+    push_name = contact_details.get("pushname", "Unnamed")
     is_business = "Yes" if contact_details.get("isBusiness") else "No"
     is_my_contact = "Yes" if contact_details.get("isMyContact") else "No"
     
