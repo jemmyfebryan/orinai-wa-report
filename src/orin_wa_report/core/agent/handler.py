@@ -68,6 +68,15 @@ ORINAI_CHAT_ENDPOINT = os.getenv("ORINAI_CHAT_ENDPOINT")
 
 db_query_url = get_db_query_endpoint(name=APP_STAGE)
 
+# -----------------------------
+# Development Configuration
+# -----------------------------
+# USE_SENDER_PHONE_MAPPING = True
+# USE_RECEIVER_PHONE_MAPPING = False
+
+# SENDER_PHONE_MAPPING = {
+#     "6285850434383@c.us": ""
+# }
 
 # -----------------------------
 # Configuration / constants
@@ -88,6 +97,12 @@ END_SESSION_MESSAGE = "Terima kasih telah menghubungi ORIN AI Chat. Jika Anda bu
 USE_WARNING_SESSION_MESSAGE = False
 INACTIVITY_WARNING_SESSION_MESSAGE = "Sesi chat akan diakhiri dalam 5 menit karena ketidakaktifan. Balas pesan untuk melanjutkan sesi ini."
 FORCED_WARNING_SESSION_MESSAGE = "Sesi chat akan diakhiri dalam 5 menit karena akan melalui batas wajar sesi."
+
+USE_WAITING_MESSAGE = False
+WAITING_MESSAGE = "Tunggu sebentar, ORIN AI sedang memproses balasan kamu"
+
+USE_ERROR_MESSAGE = False
+ERROR_MESSAGE = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
 
 # -----------------------------
 # Lightweight sqlite wrapper
@@ -741,10 +756,52 @@ async def get_agent_id():
     
     return bot_agent_id
 
+
+async def fetch_ai_reply(
+    client: httpx.AsyncClient,
+    api_token: str,
+    llm_messages,
+    bot_agent_id: str,
+) -> str | None:
+    try:
+        response = await client.post(
+            f"{ORINAI_CHAT_ENDPOINT}/chat_api",
+            json={
+                "messages": llm_messages,
+                "agent_id": bot_agent_id,
+            },
+            headers={
+                "Authorization": f"Bearer {api_token}"
+            }
+        )
+        response.raise_for_status()
+
+        logger.info(f"Raw status code: {response.status_code}")
+        logger.info(f"Raw response text: {response.text}")
+
+        response_json: Dict = response.json()
+        logger.info(f"Parsed JSON: {response_json}")
+
+        response_data = response_json.get("data", {})
+        if not response_data or not response_data.get("success"):
+            return None
+
+        reply = response_data.get("response")
+        if not reply:
+            logger.warning(f"Unexpected API response: {response_json}")
+            return None
+
+        logger.info(f"ORIN AI Chat Reply: {reply}")
+        return reply
+
+    except Exception as exc:
+        logger.exception(f"Request failed for token {api_token}: {exc}")
+        return None
+
 async def chat_response(
     msg: Dict[str, Any],
     client,
-    api_token: str,
+    api_tokens: List[str],
     openai_client: OpenAI,
     history=None
 ) -> str:
@@ -780,6 +837,8 @@ async def chat_response(
         user_name = sender.get("pushname", "")
         text = (msg["data"].get("body") or "").strip()
         
+        reply_error = False
+        
         # ensure agent is enabled to reply to this user
         disable_agent = await _DB.get_config(
             phone=phone,
@@ -808,11 +867,12 @@ async def chat_response(
         # Check if session is already processing a message
         if entry.processing_lock.locked():
             # Send immediate response without processing
-            reply = "Tunggu sebentar, ORIN AI sedang memproses balasan kamu"
-            try:
-                client.sendText(phone_jid, reply)
-            except Exception:
-                logger.exception("Failed to send wait reply to %s", phone_jid)
+            if USE_WAITING_MESSAGE:
+                reply = WAITING_MESSAGE
+                try:
+                    client.sendText(phone_jid, reply)
+                except Exception:
+                    logger.exception("Failed to send wait reply to %s", phone_jid)
     
             try:
                 await _DB.add_message(entry.session_id, sender="bot", body=reply)
@@ -832,7 +892,8 @@ async def chat_response(
                 """Start simulating typing after 1 second delay"""
                 try:
                     await typing_task
-                    client.simulateTyping(phone_jid, True)
+                    # NOTE: TEMPORARILY DISABLE SIMULATE TYPING
+                    # client.simulateTyping(phone_jid, True)
                     logger.debug(f"Started typing indicator for {phone_jid}")
                 except asyncio.CancelledError:
                     # Typing was cancelled before starting (response was fast)
@@ -883,7 +944,7 @@ async def chat_response(
                 return           
             
             # POST to ORIN AI Chat
-            logger.info(f"POST to ORIN AI Chat with token: {api_token}")
+            logger.info(f"POST to ORIN AI Chat with token: {api_tokens}")
             
             # Create an event to track if the waiting message was sent
             waiting_message_sent = False
@@ -895,11 +956,13 @@ async def chat_response(
                 if not waiting_message_sent:
                     try:
                         # Stop typing before sending waiting message
-                        client.simulateTyping(phone_jid, False)
+                        ## NOTE: TEMPORARILY DISABLE SIMULATE TYPING
+                        # client.simulateTyping(phone_jid, False)
                         
-                        waiting_text = "Tunggu sebentar, ORIN AI sedang memproses balasan kamu"
-                        client.sendText(phone_jid, waiting_text)
-                        await _DB.add_message(entry.session_id, sender="bot", body=waiting_text)
+                        if USE_WAITING_MESSAGE:
+                            waiting_text = WAITING_MESSAGE
+                            client.sendText(phone_jid, waiting_text)
+                            await _DB.add_message(entry.session_id, sender="bot", body=waiting_text)
                         waiting_message_sent = True
                     except Exception:
                         logger.exception("Failed to send waiting message")
@@ -910,46 +973,77 @@ async def chat_response(
             try:
                 bot_agent_id = await get_agent_id()
                 
-                async with httpx.AsyncClient(timeout=90.0) as httpx_client:
-                    response = await httpx_client.post(
-                        f"{ORINAI_CHAT_ENDPOINT}/chat_api",
-                        json={
-                            "messages": llm_messages,
-                            "agent_id": bot_agent_id,
-                        },
-                        headers={"X-Api-Token": api_token}
-                    )
-                response.raise_for_status()
-                logger.info(f"Raw status code: {response.status_code}")
-                logger.info(f"Raw response text: {response.text}")
+                # all_replies = []
+                # for api_token in api_tokens:
+                #     async with httpx.AsyncClient(timeout=90.0) as httpx_client:
+                #         response = await httpx_client.post(
+                #             f"{ORINAI_CHAT_ENDPOINT}/chat_api",
+                #             json={
+                #                 "messages": llm_messages,
+                #                 "agent_id": bot_agent_id,
+                #             },
+                #             headers={
+                #                 "Authorization": f"Bearer {api_token}"
+                #             }
+                #         )
+                #     response.raise_for_status()
+                #     logger.info(f"Raw status code: {response.status_code}")
+                #     logger.info(f"Raw response text: {response.text}")
 
-                response_json: Dict = response.json()
-                logger.info(f"Parsed JSON: {response_json}")
+                #     response_json: Dict = response.json()
+                #     logger.info(f"Parsed JSON: {response_json}")
                     
-                reply = response_json.get("data", {}).get("response")
-                if not reply:
-                    logger.warning(f"Unexpected API response: {response_json}")
-                    reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
+                #     response_data = response_json.get("data", {})
+                    
+                #     if not response_data: continue
+                #     if not response_data.get("success"): continue
+                        
+                #     reply = response_data.get("response")
+                #     if not reply:
+                #         logger.warning(f"Unexpected API response: {response_json}")
+                #         # reply = ERROR_MESSAGE
+                #         # reply_error = True
+                #         continue
+                    
+                #     logger.info(f"ORIN AI Chat Reply: {reply}")
+                #     all_replies.append(reply)
                 
-                logger.info(f"ORIN AI Chat Reply: {reply}")
+                async with httpx.AsyncClient(timeout=90.0) as client:
+                    tasks = [
+                        fetch_ai_reply(client, token, llm_messages, bot_agent_id)
+                        for token in api_tokens
+                    ]
+
+                    all_replies = await asyncio.gather(*tasks, return_exceptions=False)
+                all_replies = [reply for reply in all_replies if reply]
+                
+                logger.info(f"All Replies: {all_replies}")
+                
+                if all_replies:
+                    # Use first answer
+                    reply = all_replies[0]
+                    logger.info(f"Use the first one of All Replies: {reply}")
+                else:
+                    reply = ERROR_MESSAGE
+                    reply_error = True
                 
                 # Parse from Marksdown style to Whatsapp style
                 reply = markdown_to_whatsapp(reply)
                 
-                logger.info(f"Parsed to WA Style")
-                
                 if not reply:
-                    reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
+                    reply = ERROR_MESSAGE
+                    reply_error = True
             finally:
                 # Cancel typing tasks
                 typing_task.cancel()
                 typing_handler.cancel()
                 
                 # Always stop typing indicator
-                try:
-                    client.simulateTyping(phone_jid, False)
-                except Exception:
-                    logger.exception("Failed to stop typing indicator")
+                # NOTE: TEMPORARILY DISABLE SIMULATE TYPING
+                # try:
+                #     client.simulateTyping(phone_jid, False)
+                # except Exception:
+                #     logger.exception("Failed to stop typing indicator")
                 
                 # Ensure the waiting task is cancelled if it's still running
                 waiting_task.cancel()
@@ -957,12 +1051,18 @@ async def chat_response(
                 waiting_message_sent = True
     except Exception as e:
         logger.exception("Error in response chat (type=%s): %r", type(e).__name__, e)
-        reply = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
+        reply = ERROR_MESSAGE
+        reply_error = True
 
 
     # send the reply
     try:
-        client.sendText(phone_jid, reply)
+        if reply_error and USE_ERROR_MESSAGE:
+            client.sendText(phone_jid, reply)
+        elif not reply_error:
+            client.sendText(phone_jid, reply)
+        else:
+            return
     except Exception:
         logger.exception("Failed to send reply to %s", phone_jid)
 
@@ -997,15 +1097,16 @@ def register_conv_handler(bot, openai_client: OpenAI):
     async def conv_handler(msg, client):
         # FILTERS
         ## CHECK if the message is ORIN Verifier
-        if msg["data"].get("body").strip().startswith(
-            "Halo ORIN, saya ingin melakukan verifikasi akun ORIN AI."
-        ):
-            logger.debug("User want to verify number")
-            await verify_wa_bot(
-                msg=msg,
-                client=client
-            )
-            return
+        ## NOTE: TEMPORARILY DEACTIVATE VERIFICATION
+        # if msg["data"].get("body").strip().startswith(
+        #     "Halo ORIN, saya ingin melakukan verifikasi akun ORIN AI."
+        # ):
+        #     logger.debug("User want to verify number")
+        #     await verify_wa_bot(
+        #         msg=msg,
+        #         client=client
+        #     )
+        #     return
         
         # we ignore group messages here
         if msg.get("data", {}).get("isGroupMsg") or msg["data"]["fromMe"]:
@@ -1017,11 +1118,16 @@ def register_conv_handler(bot, openai_client: OpenAI):
         phone_number = raw_phone_number.split("@")[0]
         lid_number = raw_lid_number.split("@")[0]
         
+        # Alternative phone number data
+        wplus_phone_number = "+" + phone_number
+        local_phone_number = "0" + phone_number[2:]
+        
         # Seen/Read the Message
-        try:
-            client.sendSeen(raw_phone_number)
-        except WAError:
-            client.sendSeen(raw_lid_number)
+        # NOTE TEMPORARILY DEACTIVATE SEEN/READ
+        # try:
+        #     client.sendSeen(raw_phone_number)
+        # except WAError:
+        #     client.sendSeen(raw_lid_number)
         
         # If phone_number is not verified
         query = """
@@ -1035,10 +1141,13 @@ def register_conv_handler(bot, openai_client: OpenAI):
             (
                 wa_number = :wa_number
                 OR wa_lid = :wa_lid
+                OR phone_number = :phone_number
+                OR phone_number = :wplus_phone_number
+                OR phone_number = :local_phone_number
             )
             AND wa_verified = 1
             AND deleted_at IS NULL
-        ORDER BY id DESC
+        ORDER BY updated_at DESC
         LIMIT 1;
         """
         async with httpx.AsyncClient() as httpx_client:
@@ -1047,6 +1156,9 @@ def register_conv_handler(bot, openai_client: OpenAI):
                 "params": {
                     "wa_number": phone_number,
                     "wa_lid": lid_number,
+                    "phone_number": phone_number,
+                    "wplus_phone_number": wplus_phone_number,
+                    "local_phone_number": local_phone_number,
                 }
             })
             response_sql: Dict = response.json()
@@ -1054,6 +1166,7 @@ def register_conv_handler(bot, openai_client: OpenAI):
         rows = response_sql.get("rows") or []
         if not rows:
             logger.error(f"User {phone_number} not verified")
+            # NOTE: DEATIVATED NOT VERIFIED USER MESSAGE
             # response = "Mohon maaf, nomor WhatsApp anda belum terverifikasi oleh sistem kami!"
             # try:
             #     client.sendText(raw_phone_number, response)
@@ -1064,12 +1177,21 @@ def register_conv_handler(bot, openai_client: OpenAI):
                 
             return
         
-        api_token = response_sql.get("rows")[0].get("api_token")
+        # Max 3 users per question referred
+        max_api_token_users = 3
+        
+        api_tokens = [
+            row["api_token"]
+            for row in response_sql.get("rows", [])[:max_api_token_users]
+            if "api_token" in row
+        ]
+
+        # api_token = response_sql.get("rows")[0].get("api_token")
         
         await chat_response(
             msg=msg,
             client=client,
-            api_token=api_token,
+            api_tokens=api_tokens,
             openai_client=openai_client
         )
 

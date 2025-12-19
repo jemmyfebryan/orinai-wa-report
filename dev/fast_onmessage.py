@@ -1,5 +1,5 @@
 from src.orin_wa_report.core.agent.listener import ChatBotHandler
-from wa_automate_socket_client import SocketClient
+from src.orin_wa_report.core.openwa import SocketClient
 import asyncio
 import json
 
