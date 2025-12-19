@@ -71,12 +71,18 @@ db_query_url = get_db_query_endpoint(name=APP_STAGE)
 # -----------------------------
 # Development Configuration
 # -----------------------------
-# USE_SENDER_PHONE_MAPPING = True
-# USE_RECEIVER_PHONE_MAPPING = False
+    
+USE_SENDER_PHONE_MAPPING = True
+USE_RECEIVER_PHONE_MAPPING = False
 
-# SENDER_PHONE_MAPPING = {
-#     "6285850434383@c.us": ""
-# }
+SENDER_PHONE_MAPPING = {
+    # "12816215965755@lid": "6281333370000@c.us"
+    "6285850434383@c.us": "6281333370000@c.us"
+}
+
+# if APP_STAGE == "production":
+#     USE_SENDER_PHONE_MAPPING = False
+#     USE_RECEIVER_PHONE_MAPPING = False
 
 # -----------------------------
 # Configuration / constants
@@ -769,6 +775,7 @@ async def fetch_ai_reply(
             json={
                 "messages": llm_messages,
                 "agent_id": bot_agent_id,
+                "include_suggested_questions": False,
             },
             headers={
                 "Authorization": f"Bearer {api_token}"
@@ -1008,9 +1015,9 @@ async def chat_response(
                 #     logger.info(f"ORIN AI Chat Reply: {reply}")
                 #     all_replies.append(reply)
                 
-                async with httpx.AsyncClient(timeout=90.0) as client:
+                async with httpx.AsyncClient(timeout=90.0) as httpx_client:
                     tasks = [
-                        fetch_ai_reply(client, token, llm_messages, bot_agent_id)
+                        fetch_ai_reply(httpx_client, token, llm_messages, bot_agent_id)
                         for token in api_tokens
                     ]
 
@@ -1115,6 +1122,11 @@ def register_conv_handler(bot, openai_client: OpenAI):
         raw_phone_number = msg["data"]["sender"].get("phoneNumber")
         raw_lid_number = msg["data"]["sender"].get("lid")
         
+        # Development Mapping
+        if USE_SENDER_PHONE_MAPPING:
+            if raw_phone_number in SENDER_PHONE_MAPPING.keys():
+                raw_phone_number = SENDER_PHONE_MAPPING[raw_phone_number]
+        
         phone_number = raw_phone_number.split("@")[0]
         lid_number = raw_lid_number.split("@")[0]
         
@@ -1130,7 +1142,11 @@ def register_conv_handler(bot, openai_client: OpenAI):
         #     client.sendSeen(raw_lid_number)
         
         # If phone_number is not verified
-        query = """
+        
+        # Max 3 users per question referred
+        max_api_token_users = 3
+        
+        query = f"""
         SELECT
             id,
             name,
@@ -1145,11 +1161,13 @@ def register_conv_handler(bot, openai_client: OpenAI):
                 OR phone_number = :wplus_phone_number
                 OR phone_number = :local_phone_number
             )
-            AND wa_verified = 1
+            
             AND deleted_at IS NULL
         ORDER BY updated_at DESC
-        LIMIT 1;
+        LIMIT {max_api_token_users};
         """
+        # NOTE: TEMPORARILY REMOVE RULE TO BE VERIFIED
+        # AND wa_verified = 1
         async with httpx.AsyncClient() as httpx_client:
             response = await httpx_client.post(db_query_url, json={
                 "query": query,
@@ -1164,6 +1182,7 @@ def register_conv_handler(bot, openai_client: OpenAI):
             response_sql: Dict = response.json()
         
         rows = response_sql.get("rows") or []
+        # logger.info(f"User rows: {rows}")
         if not rows:
             logger.error(f"User {phone_number} not verified")
             # NOTE: DEATIVATED NOT VERIFIED USER MESSAGE
@@ -1177,12 +1196,10 @@ def register_conv_handler(bot, openai_client: OpenAI):
                 
             return
         
-        # Max 3 users per question referred
-        max_api_token_users = 3
         
         api_tokens = [
             row["api_token"]
-            for row in response_sql.get("rows", [])[:max_api_token_users]
+            for row in response_sql.get("rows", [])
             if "api_token" in row
         ]
 
