@@ -44,6 +44,8 @@ from typing import Optional, Dict, Any, List
 
 from openai import OpenAI
             
+from src.orin_wa_report.core.openwa import WAError
+            
 from src.orin_wa_report.core.agent.llm import get_question_class
 from src.orin_wa_report.core.agent.config import question_class_details
 
@@ -62,6 +64,8 @@ BOT_PHONE_NUMBER = os.getenv("BOT_PHONE_NUMBER", "")
 
 ORINAI_CHAT_ENDPOINT = os.getenv("ORINAI_CHAT_ENDPOINT")
 
+
+
 db_query_url = get_db_query_endpoint(name=APP_STAGE)
 
 
@@ -76,6 +80,15 @@ INACTIVITY_END_SECONDS = 15 * 60  # 15 minutes
 FORCED_SESSION_SECONDS = 1 * 60 * 60  # 1 hour
 FORCED_WARNING_BEFORE = 5 * 60  # 5 minutes
 
+USE_END_SESSION_MESSAGE = False
+INACTIVITY_END_SESSION_MESSAGE = "Terima kasih telah menghubungi ORIN AI Chat. Jika Anda butuh bantuan di lain waktu, silakan chat kembali."
+FORCED_END_SESSION_MESSAGE = "Terima kasih telah menghubungi ORIN AI Chat. Jika Anda butuh bantuan di lain waktu, silakan chat kembali."
+END_SESSION_MESSAGE = "Terima kasih telah menghubungi ORIN AI Chat. Jika Anda butuh bantuan di lain waktu, silakan chat kembali."
+
+USE_WARNING_SESSION_MESSAGE = False
+INACTIVITY_WARNING_SESSION_MESSAGE = "Sesi chat akan diakhiri dalam 5 menit karena ketidakaktifan. Balas pesan untuk melanjutkan sesi ini."
+FORCED_WARNING_SESSION_MESSAGE = "Sesi chat akan diakhiri dalam 5 menit karena akan melalui batas wajar sesi."
+
 # -----------------------------
 # Lightweight sqlite wrapper
 # -----------------------------
@@ -85,6 +98,7 @@ class ChatDB:
         self.db_path = Path(db_path)
         self._conn: Optional[sqlite3.Connection] = None
         self._init_done = False
+        self.valid_config_keys = {"disable_agent"}
         # small in-process sqlite is protected by an asyncio lock and run_in_executor for blocking ops
         self._lock = asyncio.Lock()
 
@@ -95,6 +109,15 @@ class ChatDB:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             # connect
             self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+            
+            # Register adapters/converters for boolean values (0/1)
+            # This is important for consistency when inserting/retrieving
+            # Although sqlite stores BOOL as INTEGER, registering converter/adapter is good practice.
+            sqlite3.register_adapter(bool, int)
+            # Add a converter for INTEGER to BOOL type, which we'll use in _get_config_row
+            def convert_bool(v):
+                return bool(int(v))
+            
             # safer WAL mode for concurrent readers/writers
             self._conn.execute("PRAGMA journal_mode = WAL;")
             self._conn.execute("PRAGMA synchronous = NORMAL;")
@@ -131,9 +154,34 @@ class ChatDB:
             );
 
             CREATE INDEX IF NOT EXISTS idx_messages_session_ts ON messages(session_id, timestamp);
+            
+            CREATE TABLE IF NOT EXISTS config (
+                id TEXT PRIMARY KEY,
+                phone TEXT UNIQUE NOT NULL,
+                disable_agent BOOL NOT NULL
+            )
             """
         )
         self._conn.commit()
+        
+    def _create_default_config_row(self, phone: str):
+        """Internal helper to create a default config row for a new phone."""
+        cur = self._conn.cursor()
+        
+        # Build the SQL command dynamically based on self.valid_config_keys
+        # All valid bool configs are defaulted to False (0)
+        columns = ["id", "phone"] + list(self.valid_config_keys)
+        placeholders = ["?"] * len(columns)
+        
+        sql = f"INSERT OR IGNORE INTO config ({', '.join(columns)}) VALUES ({', '.join(placeholders)})"
+        
+        default_values = [False] * len(self.valid_config_keys)
+        
+        # Values: uuid, phone, followed by False (0) for each config key
+        values = [uuid.uuid4().hex, phone] + default_values
+        
+        cur.execute(sql, values)
+        # No commit here, as it will be part of a larger transaction or committed by the caller.
 
     async def _run(self, fn, *args, **kwargs):
         """Run a blocking DB call in executor with lock."""
@@ -152,6 +200,9 @@ class ChatDB:
                 "INSERT INTO sessions (id, phone, user_name, started_at, last_activity, status) VALUES (?, ?, ?, ?, ?, ?)",
                 (session_id, phone, user_name, started_at, started_at, 'active')
             )
+            
+            self._create_default_config_row(phone)
+            
             self._conn.commit()
             return session_id
         return await self._run(_create)
@@ -219,6 +270,25 @@ ORDER BY started_at ASC;
             return [dict(zip(keys, row)) for row in rows]
         return await self._run(_get)
 
+    async def get_latest_session_by_phone_force(self, phone: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieves the ABSOLUTE latest session for a phone number,
+        regardless of its status (active, ended, etc.).
+        This is a clear implementation of the requested 'force' behavior.
+        """
+        def _get():
+            cur = self._conn.cursor()
+            cur.execute(
+                "SELECT id, phone, user_name, started_at, last_activity, status, ended_at FROM sessions WHERE phone = ? ORDER BY started_at DESC LIMIT 1",
+                (phone,)
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            keys = ["id","phone","user_name","started_at","last_activity","status","ended_at"]
+            return dict(zip(keys, row))
+        return await self._run(_get)
+
     async def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         def _get():
             cur = self._conn.cursor()
@@ -250,6 +320,31 @@ ORDER BY started_at ASC;
             return message_id
         return await self._run(_add)
 
+    async def add_chat_to_latest_session(self, phone_number: str, sender: str, message: str):
+        """
+        Adds a message to the latest session associated with the given phone number.
+        If no active session is found, it will do nothing (or could optionally raise an error).
+        """
+        # 1. Get the latest session for the phone number
+        session = await self.get_session_by_phone(phone_number)
+
+        if not session:
+            # No session found for this phone number, log or handle as needed
+            logger.warning(f"Attempted to add chat for phone {phone_number} but no session found.")
+            return
+
+        session_id = session["id"]
+
+        # 2. Add the message to the found session
+        await self.add_message(
+            session_id=session_id,
+            sender=sender,
+            body=message
+        )
+
+        # 3. Update the session's last activity
+        await self.update_session_activity(session_id)
+
     async def get_messages_for_session(self, session_id: str, limit: int = 100) -> List[Dict[str, Any]]:
         def _get():
             cur = self._conn.cursor()
@@ -269,6 +364,107 @@ ORDER BY started_at ASC;
                 })
             return out
         return await self._run(_get)
+    
+    async def get_config(
+        self,
+        phone: str,
+        key: str,
+        create_if_not_exists: bool = False
+    ) -> Optional[bool]:
+        """
+        Retrieves a boolean configuration value for a specific phone number.
+        Returns None if the phone or key is not found, or if the value is not a boolean.
+        """
+        # The 'config' table currently only has 'disable_agent' as a config key.
+        # We must ensure the 'key' is a valid column name to prevent SQL injection.
+        # For this example, we'll hardcode the valid key check.
+        # In a real system, you might use a more robust validation or a predefined dict of keys.
+        if key not in self.valid_config_keys:
+            logger.error("(get_config) The key you requested is not in the table")
+            return None
+
+        def _get():
+            cur = self._conn.cursor()
+            # Note: Using an f-string for the column name 'key' is safe here 
+            # because we strictly validated 'key' against 'valid_keys' above.
+            cur.execute(
+                f"SELECT {key} FROM config WHERE phone = ?",
+                (phone,)
+            )
+            row = cur.fetchone()
+            if row:
+                # Value found, return it as a boolean
+                return bool(row[0])
+            elif create_if_not_exists:
+                # Value not found, but we need to create it
+                self._create_default_config_row(phone)
+                self._conn.commit()
+                # Since we just created a default row, the value for 'key' is False (0)
+                return False
+            else:
+                return None
+        
+        return await self._run(_get)
+    
+    async def update_config(
+        self,
+        phone: str,
+        values: Dict[str, Any],
+        create_if_not_exists: bool = False
+    ):
+        """
+        Updates one or more configuration values for a phone number.
+        If the phone does not exist and create_if_not_exists is True, it creates a new
+        row with the provided values (and False for any missing valid keys).
+        The 'values' dict keys must be in self.valid_config_keys.
+        """
+        
+        # 1. Filter out invalid keys from the update dictionary
+        update_keys = [k for k in values if k in self.valid_config_keys]
+        if not update_keys:
+            return # Nothing to update
+
+        def _update():
+            cur = self._conn.cursor()
+            
+            # Check if the phone already has a config row
+            cur.execute("SELECT id FROM config WHERE phone = ?", (phone,))
+            row_exists = cur.fetchone()
+
+            if not row_exists and create_if_not_exists:
+                # 2. Case: Row does not exist, but we should create it
+                self._create_default_config_row(phone) # Creates a default row
+                # We need to commit here to ensure the subsequent UPDATE finds the row
+                self._conn.commit() 
+            elif not row_exists:
+                # 3. Case: Row does not exist and we are not creating it
+                return
+            
+            # 4. Case: Row exists (or was just created), now perform the update
+            # Build the SET part of the SQL query: "key1 = ?, key2 = ?"
+            set_clauses = [f"{key} = ?" for key in update_keys]
+            sql = f"UPDATE config SET {', '.join(set_clauses)} WHERE phone = ?"
+            
+            # Extract values in the same order as the keys for the SET clause
+            update_values = [values[key] for key in update_keys]
+            
+            # Append the phone number for the WHERE clause
+            params = update_values + [phone]
+            
+            cur.execute(sql, params)
+            self._conn.commit()
+        
+        await self._run(_update)
+
+    async def close(self):
+        """Closes the connection, forcing an immediate checkpoint."""
+        async with self._lock:
+            if self._conn:
+                # Force a checkpoint to merge WAL data into the main DB file
+                self._conn.execute("PRAGMA wal_checkpoint(FULL);")
+                self._conn.close()
+                self._conn = None
+                logger.info("SettingsDB connection closed and checkpointed.")
 
 # -----------------------------
 # Session manager in memory
@@ -396,11 +592,12 @@ class SessionManager:
                 # activity happened - watcher will be restarted by touch_session
                 return
             # send warning
-            warn_text = "Sesi chat akan diakhiri dalam 5 menit karena ketidakaktifan. Balas pesan untuk melanjutkan sesi ini."
-            try:
-                client.sendText(entry.jid, warn_text)
-            except Exception:
-                logger.exception("Failed to send inactivity warning")
+            if USE_WARNING_SESSION_MESSAGE:
+                warn_text = INACTIVITY_WARNING_SESSION_MESSAGE
+                try:
+                    client.sendText(entry.jid, warn_text)
+                except Exception:
+                    logger.exception("Failed to send inactivity warning")
             # wait final 5 minutes
             await asyncio.sleep(INACTIVITY_END_SECONDS - INACTIVITY_WARNING_SECONDS)
             # final check
@@ -414,10 +611,11 @@ class SessionManager:
                 return
             # end session
             logger.info(f"Ending session {entry.session_id} for {entry.phone} due to inactivity")
-            try:
-                client.sendText(entry.jid, "Terima kasih telah menghubungi ORIN AI Chat. Jika Anda butuh bantuan di lain waktu, silakan chat kembali.")
-            except Exception:
-                logger.exception("Failed to send inactivity final message")
+            if USE_END_SESSION_MESSAGE:
+                try:
+                    client.sendText(entry.jid, INACTIVITY_END_SESSION_MESSAGE)
+                except Exception:
+                    logger.exception("Failed to send inactivity final message")
             await self.db.end_session(entry.session_id, ended_at=int(time.time()), status="ended")
             # cleanup
             async with self._lock:
@@ -439,20 +637,22 @@ class SessionManager:
             sess = await self.db.get_session(entry.session_id)
             if not sess or sess.get("status") != "active":
                 return
-            try:
-                client.sendText(entry.jid, "Sesi chat akan diakhiri dalam 5 menit karena akan melalui batas wajar sesi.")
-            except Exception:
-                logger.exception("Failed to send forced-end warning")
+            if USE_WARNING_SESSION_MESSAGE:
+                try:
+                    client.sendText(entry.jid, FORCED_WARNING_SESSION_MESSAGE)
+                except Exception:
+                    logger.exception("Failed to send forced-end warning")
             await asyncio.sleep(FORCED_WARNING_BEFORE)
             # final end
             sess = await self.db.get_session(entry.session_id)
             if not sess or sess.get("status") != "active":
                 return
             logger.info(f"Force ending session {entry.session_id} for {entry.phone} due to time limit")
-            try:
-                client.sendText(entry.jid, "Terima kasih telah menghubungi ORIN AI Chat. Jika Anda butuh bantuan di lain waktu, silakan chat kembali.")
-            except Exception:
-                logger.exception("Failed to send forced final message")
+            if USE_END_SESSION_MESSAGE:
+                try:
+                    client.sendText(entry.jid, FORCED_END_SESSION_MESSAGE)
+                except Exception:
+                    logger.exception("Failed to send forced final message")
             await self.db.end_session(entry.session_id, ended_at=int(time.time()), status="ended")
             async with self._lock:
                 await self._cancel_tasks(entry)
@@ -473,10 +673,11 @@ class SessionManager:
             except Exception:
                 logger.exception("Failed to end session in DB")
                 return False
-            try:
-                client.sendText(entry.jid, "Terima kasih telah menghubungi ORIN AI Chat. Jika Anda butuh bantuan di lain waktu, silakan chat kembali.")
-            except Exception:
-                logger.exception("Failed to send session end message")
+            if USE_END_SESSION_MESSAGE:
+                try:
+                    client.sendText(entry.jid, END_SESSION_MESSAGE)
+                except Exception:
+                    logger.exception("Failed to send session end message")
             await self._cancel_tasks(entry)
             self._sessions.pop(phone, None)
             logger.info(f"Session {entry.session_id} for {phone} ended manually with reason: {reason}")
@@ -571,14 +772,32 @@ async def chat_response(
         if msg.get("data", {}).get("isGroupMsg"):
             return ""
 
+        # Use ['data']['from'] to universally identified number
         phone_jid = msg["data"].get("from")
+        # phone_jid = msg["data"]["sender"].get("id")
         phone = phone_jid.split("@")[0]
         sender = msg["data"].get("sender", {}) or {}
         user_name = sender.get("pushname", "")
         text = (msg["data"].get("body") or "").strip()
+        
+        # ensure agent is enabled to reply to this user
+        disable_agent = await _DB.get_config(
+            phone=phone,
+            key="disable_agent",
+            create_if_not_exists=True
+        )
+        logger.info(f"(chat_response) disable_agent config for {phone} is {disable_agent}")
+        if disable_agent:
+            logger.warning(f"(chat_response) disable_agent is set to True for phone {phone}, agent won't reply")
+            return None
 
         # ensure session exists
-        entry = await _SESSION_MANAGER.ensure_session(phone=phone, jid=phone_jid, user_name=user_name, client=client)
+        entry = await _SESSION_MANAGER.ensure_session(
+            phone=phone,
+            jid=phone_jid,
+            user_name=user_name,
+            client=client
+        )
 
         # store user message
         try:
@@ -778,9 +997,10 @@ def register_conv_handler(bot, openai_client: OpenAI):
     async def conv_handler(msg, client):
         # FILTERS
         ## CHECK if the message is ORIN Verifier
-        if msg["data"].get("body").startswith(
+        if msg["data"].get("body").strip().startswith(
             "Halo ORIN, saya ingin melakukan verifikasi akun ORIN AI."
         ):
+            logger.debug("User want to verify number")
             await verify_wa_bot(
                 msg=msg,
                 client=client
@@ -791,11 +1011,19 @@ def register_conv_handler(bot, openai_client: OpenAI):
         if msg.get("data", {}).get("isGroupMsg") or msg["data"]["fromMe"]:
             return
         
+        raw_phone_number = msg["data"]["sender"].get("phoneNumber")
+        raw_lid_number = msg["data"]["sender"].get("lid")
+        
+        phone_number = raw_phone_number.split("@")[0]
+        lid_number = raw_lid_number.split("@")[0]
+        
         # Seen/Read the Message
-        client.sendSeen(msg["data"]["from"])
+        try:
+            client.sendSeen(raw_phone_number)
+        except WAError:
+            client.sendSeen(raw_lid_number)
         
         # If phone_number is not verified
-        phone_number = msg["data"].get("from").split("@")[0]
         query = """
         SELECT
             id,
@@ -804,7 +1032,10 @@ def register_conv_handler(bot, openai_client: OpenAI):
             wa_number
         FROM users
         WHERE
-            wa_number = :wa_number
+            (
+                wa_number = :wa_number
+                OR wa_lid = :wa_lid
+            )
             AND wa_verified = 1
             AND deleted_at IS NULL
         ORDER BY id DESC
@@ -813,15 +1044,24 @@ def register_conv_handler(bot, openai_client: OpenAI):
         async with httpx.AsyncClient() as httpx_client:
             response = await httpx_client.post(db_query_url, json={
                 "query": query,
-                "params": {"wa_number": phone_number}
+                "params": {
+                    "wa_number": phone_number,
+                    "wa_lid": lid_number,
+                }
             })
             response_sql: Dict = response.json()
         
         rows = response_sql.get("rows") or []
         if not rows:
             logger.error(f"User {phone_number} not verified")
-            response = "Mohon maaf, nomor WhatsApp anda belum terverifikasi oleh sistem kami!"
-            client.sendText(msg["data"]["from"], response)
+            # response = "Mohon maaf, nomor WhatsApp anda belum terverifikasi oleh sistem kami!"
+            # try:
+            #     client.sendText(raw_phone_number, response)
+            # except WAError:
+            #     client.sendText(raw_lid_number, response)
+            
+            logger.warning(f"{phone_number} messaged but they aren't verified!")
+                
             return
         
         api_token = response_sql.get("rows")[0].get("api_token")

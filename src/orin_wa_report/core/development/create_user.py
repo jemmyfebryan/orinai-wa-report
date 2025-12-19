@@ -111,6 +111,7 @@ async def create_dummy_user(wa_verified: bool = False, name: str = None, phone_n
     random_num: int = np.random.randint(1, 1000)
     
     wa_number = phone_number if wa_verified else ""
+    wa_lid = ""
     wa_verified = 1 if wa_verified else 0
     
     if name:
@@ -127,7 +128,7 @@ async def create_dummy_user(wa_verified: bool = False, name: str = None, phone_n
     
     async with httpx.AsyncClient() as client:
         response = await client.post(url, json={
-            "query": f"INSERT INTO users (name,email,password,created_at,updated_at,api_token,verified,account_type,license_type,google,facebook,has_tms,wa_number,wa_verified) VALUES ('{name}','{email}','{hashed_password}',NOW(),NOW(),'{user_api_token}',1,'premium','basic_annual',0,0,0,'{wa_number}',{wa_verified});COMMIT;",
+            "query": f"INSERT INTO users (name,email,password,created_at,updated_at,api_token,verified,account_type,license_type,google,facebook,has_tms,wa_number,wa_verified,wa_lid) VALUES ('{name}','{email}','{hashed_password}',NOW(),NOW(),'{user_api_token}',1,'premium','basic_annual',0,0,0,'{wa_number}',{wa_verified},'{wa_lid}');COMMIT;",
             "api_key": db_api_key
         })
         response_sql: Dict = response.json()

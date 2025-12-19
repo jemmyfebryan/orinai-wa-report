@@ -131,7 +131,9 @@ ifeq ($(USE_DOCKER),true)
 	$(MAKE) docker-remove
 	$(MAKE) docker-run
 else
-	$(MAKE) pm2-restart
+	$(MAKE) pm2-stop
+	$(MAKE) pm2-run
+	$(MAKE) pm2-logs
 endif
 
 test:

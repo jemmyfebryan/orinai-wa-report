@@ -1,6 +1,7 @@
 import os
 import asyncio
 import base64
+import sqlite3
 import random
 from pydantic import BaseModel
 from typing import List, Dict, Optional
@@ -12,7 +13,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from wa_automate_socket_client import SocketClient
+
+from src.orin_wa_report.core.openwa import SocketClient, WAError
 
 # Import ChatDB for session management
 from src.orin_wa_report.core.agent.handler import ChatDB, DB_PATH
@@ -20,8 +22,10 @@ from src.orin_wa_report.core.api.routers.demo import router as demo_router
 from src.orin_wa_report.core.api.routers.alert import router as alert_router
 from src.orin_wa_report.core.api.utils import (
     periodic_dummy_notifications,
-    periodic_send_notifications
+    periodic_send_notifications,
+    convert_phone_to_lid,
 )
+from src.orin_wa_report.core.db import SettingsDB, DB_PATH as SETTINGS_DB_PATH, ensure_settings_db
 from src.orin_wa_report.core.development import (
     create_notifications,
     create_user
@@ -49,14 +53,20 @@ app = FastAPI()
 # Initialize ChatDB for session management
 chat_db = ChatDB(DB_PATH)
 
+# Initialize SettingDB for setting management
+settings_db = SettingsDB(SETTINGS_DB_PATH)
+
 # Periodic Task
 @app.on_event("startup")
 async def start_background_task():
     # Initialize chat database
     await chat_db.initialize()
     
+    # Initialize settings database
+    await settings_db.initialize()
+    
     # Initialize openwa_client
-    asyncio.create_task(init_openwa_client())
+    # asyncio.create_task(init_openwa_client())
     
     # Message Queue for Bulk Messages
     asyncio.create_task(message_worker())
@@ -71,6 +81,8 @@ async def start_background_task():
 @app.on_event("shutdown")
 async def shutdown_event():
     openwa_client.disconnect()
+    await ChatDB.close()
+    await SettingsDB.close()
 
 # Configure CORS with allowed origins
 origins = os.getenv('CORS_ORIGINS', '').split(',')
@@ -122,30 +134,44 @@ async def get_qr_raw():
 
 # OpenWA Client
 OPEN_WA_PORT = os.getenv("OPEN_WA_PORT")
-openwa_client = None
+openwa_client: SocketClient | None = None
 
-async def init_openwa_client():
+def set_openwa_client(client):
     global openwa_client
+    openwa_client = client
 
-    loop = asyncio.get_event_loop()
-    def blocking_init():
-        global openwa_client
-        openwa_client = SocketClient(f"http://172.17.0.1:{OPEN_WA_PORT}/", api_key="my_secret_api_key")
-        logger.info("OpenWA Client Connected!")
+# async def init_openwa_client():
+#     global openwa_client
 
-    await loop.run_in_executor(None, blocking_init)
+#     loop = asyncio.get_event_loop()
+#     def blocking_init():
+#         global openwa_client
+#         openwa_client = SocketClient(f"http://172.17.0.1:{OPEN_WA_PORT}/", api_key="my_secret_api_key")
+#         logger.info("OpenWA Client Connected!")
+
+#     await loop.run_in_executor(None, blocking_init)
+    
+#     logger.info(openwa_client.getMe())
 
 class MessageRequest(BaseModel):
     to: str       # phone number, e.g. "1234567890@c.us"
+    to_fallback: Optional[str] = None
     message: str  # message text
 
 @app.post("/send-message")
 async def send_message(req: MessageRequest):
     if openwa_client is None:
         raise HTTPException(status_code=503, detail="WhatsApp client not ready")
-
     try:
-        openwa_client.sendText(req.to, req.message)
+        try:
+            openwa_client.sendText(req.to, req.message)
+        except WAError:
+            openwa_client.sendText(req.to_fallback, req.message)
+        await chat_db.add_chat_to_latest_session(
+            phone_number=req.to.split(sep="@")[0],
+            sender="bot",
+            message=req.message
+        )
         return {"status": "success", "to": req.to, "message": req.message}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -158,7 +184,10 @@ async def message_worker():
     while True:
         msg, delay = await message_queue.get()
         try:
-            openwa_client.sendText(msg.to, msg.message)
+            try:
+                openwa_client.sendText(msg.to, msg.message)
+            except WAError:
+                openwa_client.sendText(msg.to_fallback, msg.message)
             logger.info(f"Message worker to {msg.to} with delay {delay}")
         except Exception as e:
             print(f"❌ Failed to send {msg.to}: {e}")
@@ -220,11 +249,54 @@ async def create_dummy_user(request: Request):
 app.include_router(demo_router)
 app.include_router(alert_router)
 
+# Notification settings
+# Setting Notification routes
+@app.get('/notification_setting')
+async def get_notification_setting():
+    agents = await settings_db.get_notification_setting()
+    return JSONResponse(content=agents)
+
+@app.post('/notification_setting')
+async def create_notification_setting(request: Request):
+    data = await request.json()
+    try:
+        content = await settings_db.create_notification_setting(data=data)
+        return JSONResponse(
+            content=content,
+            status_code=201
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Setting must be unique")
+
+@app.put('/notification_setting/{setting}')
+async def update_notification_setting(setting: str, request: Request):
+    data = await request.json()
+    try:
+        content = await settings_db.update_notification_setting(
+            setting=setting,
+            data=data
+        )
+        return JSONResponse(
+            content=content
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="Setting must be unique")
+    
+@app.delete('/notification_setting/{setting}')
+async def delete_notification_setting(setting: str):
+    try:
+        content = await settings_db.delete_notification_setting(
+            setting=setting
+        )
+        return JSONResponse(content=content)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
 # Alert Settings
 class ApplySettings(BaseModel):
     enable_create_dummy_alert: bool
     enable_send_alert: bool
-    
+
 @app.get("/settings")
 def get_settings():
     # logger.info(f"Get Setting, config_data: {config_data}")
@@ -284,6 +356,29 @@ async def get_chat_history(phone_number: str):
             })
     
     return openai_messages
+
+@app.get("/whatsapp/phone_to_lid/{phone_number}")
+async def get_phone_to_lid(phone_number: str):
+    """
+    Fetch ALL chat history for a phone number across all sessions
+    Returns: List of messages with session markers and timestamps
+    """
+    try:
+        lid_number = await convert_phone_to_lid(
+            phone_number=phone_number
+        )
+        
+        return JSONResponse(content={
+            "status": "success",
+            "message": "Succesfully convert phone number to lid number",
+            "lid_number": lid_number
+        }, status_code=200)
+    except Exception as e:
+        return JSONResponse(content={
+            "status": "error",
+            "message": f"Error when convert phone number to lid number: {str(e)}",
+            "lid_number": None
+        }, status_code=500)
 
 @app.get("/whatsapp/contacts")
 async def get_contacts():
@@ -353,6 +448,8 @@ async def get_profile(phone_number: str):
     global openwa_client
     
     contact_details = openwa_client.getContact(f"{phone_number}@c.us")
+    if contact_details is None:
+        contact_details = openwa_client.getContact(f"{phone_number}@lid")
     
     profile_url = contact_details.get("profilePicThumbObj", "")
     # logger.info(f"Profile Url: {profile_url}")
@@ -387,13 +484,19 @@ async def get_profile(phone_number: str):
 @app.post("/whatsapp/dummy_notification")
 async def wa_dummy_notification(request: Request):
     data = await request.json()
+    number_type = data.get("number_type")
     to = data.get("to")
-    to = f"{to}@c.us"
+    if number_type == "lid":
+        to = f"{to}@lid"
+    else:
+        to = f"{to}@c.us"
     alert_type: str = data.get("alert_type")
     
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(f"{ORINAI_CHAT_ENDPOINT}/notification_setting")
-        resp_json: List[Dict] = resp.json()
+    # async with httpx.AsyncClient() as client:
+    #     resp = await client.get(f"{ORINAI_CHAT_ENDPOINT}/notification_setting")
+    #     resp_json: List[Dict] = resp.json()
+        
+    resp_json = await settings_db.get_notification_setting()
         
     alert_setting = [val for val in resp_json if val.get("setting") == f"prompt_{alert_type}"]
     if len(alert_setting) == 0:
@@ -413,3 +516,49 @@ async def wa_dummy_notification(request: Request):
         return {"status": "success", "to": to, "message": message_final}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@app.get("/whatsapp/disable_agent/{phone_number}")
+async def get_disable_agent(phone_number: str):
+    disable_agent = await chat_db.get_config(
+        phone=phone_number,
+        key="disable_agent",
+        create_if_not_exists=True,
+    )
+    
+    return {
+        "phone_number": phone_number,
+        "disable_agent": disable_agent,
+    }
+    
+class DisableAgentUpdate(BaseModel):
+    """
+    Defines the request body for updating only the 'disable_agent' flag.
+    """
+    phone_number: str
+    disable_agent: bool
+    
+@app.put("/whatsapp/disable_agent")
+async def update_disable_agent(data: DisableAgentUpdate):
+    """
+    Updates the 'disable_agent' configuration value for a specific phone number.
+    Creates a config row if it doesn't exist.
+    """
+    
+    # 1. Prepare the dictionary for update_config: {"disable_agent": True/False}
+    update_values = {
+        "disable_agent": data.disable_agent
+    }
+    
+    # 2. Call the update_config method
+    await chat_db.update_config(
+        phone=data.phone_number,
+        values=update_values,
+        create_if_not_exists=True, # Ensure a row exists or is created before updating
+    )
+    
+    # 3. Return a confirmation response
+    return {
+        "status": "success",
+        "phone_number": data.phone_number,
+        "disable_agent_new_value": data.disable_agent,
+    }

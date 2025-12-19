@@ -84,7 +84,11 @@ async def generate_and_store_wa_key(user_id: str):
         "response_sql": response_sql
     }
     
-async def verify_wa_key_and_store_wa_number(wa_key: str, wa_number: str):
+async def verify_wa_key_and_store_wa_number(
+    wa_key: str,
+    wa_number: str,
+    wa_lid: str,  # WhatsApp will migrate to lid instead of number
+):
     try:
         verification_result = await verify_wa_key(token=wa_key)
         
@@ -96,7 +100,7 @@ async def verify_wa_key_and_store_wa_number(wa_key: str, wa_number: str):
                 FROM users 
                 WHERE wa_key = :wa_key
             ) THEN 1 
-            ELSE 0 
+            ELSE 0
         END AS wa_key_exists;
         """
         async with httpx.AsyncClient() as client:
@@ -110,7 +114,8 @@ async def verify_wa_key_and_store_wa_number(wa_key: str, wa_number: str):
             raise ValueError(f"Wa key {wa_key} from number {wa_number} doesn't exist in database")
         
         # IMPLEMENT WHEN NEW NUMBER VERIFIED, WHEN THERE IS SAME NUMBER ON OTHER USERS, THE OTHER USERS WILL BE UNVERIFIED
-        if wa_number:
+        # WhatsApp soon migrate from phone_number to lid_number
+        if wa_number or wa_lid:
             async with httpx.AsyncClient() as client:
                 response = await client.post(db_query_url, json={
                     "query": """
@@ -120,9 +125,14 @@ async def verify_wa_key_and_store_wa_number(wa_key: str, wa_number: str):
                             wa_notif = 0,
                             wa_verified = 0,
                             wa_number = ''
-                        WHERE wa_number = :wa_number; COMMIT;
+                        WHERE wa_number = :wa_number
+                            OR wa_lid = :wa_lid;
+                        COMMIT;
                     """,
-                    "params": {"wa_number": wa_number},
+                    "params": {
+                        "wa_number": wa_number,
+                        "wa_lid": wa_lid,
+                    },
                     "api_key": db_api_key,
                 })
             response.raise_for_status()
@@ -133,6 +143,7 @@ async def verify_wa_key_and_store_wa_number(wa_key: str, wa_number: str):
         query = """
         UPDATE users 
         SET wa_number = :wa_number, 
+            wa_lid = :wa_lid,
             wa_notif = 1, 
             wa_verified = 1 
         WHERE wa_key = :wa_key;
@@ -145,7 +156,8 @@ async def verify_wa_key_and_store_wa_number(wa_key: str, wa_number: str):
                 "api_key": db_api_key,
                 "params": {
                     "wa_key": wa_key,
-                    "wa_number": wa_number
+                    "wa_number": wa_number,
+                    "wa_lid": wa_lid,
                 }
             })
             response_sql: Dict = response.json()

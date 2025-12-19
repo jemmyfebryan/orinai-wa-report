@@ -9,7 +9,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from wa_automate_socket_client import SocketClient
+from src.orin_wa_report.core.openwa import SocketClient
 
 from src.orin_wa_report.core.development.create_user import create_dummy_user
 from src.orin_wa_report.core.utils import get_db_query_endpoint
@@ -73,7 +73,8 @@ async def get_users_util(url: str) -> Dict:
                     wa_key,
                     wa_notif,
                     wa_number,
-                    wa_verified
+                    wa_verified,
+                    wa_lid
                 FROM users
                 WHERE
                     name LIKE 'OrinAI%'

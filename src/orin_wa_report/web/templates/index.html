@@ -43,7 +43,9 @@
             <div class="row"><label>Mimic User</label>
               <select id="mimic_user">
                 <option>None</option>
+                <option>41481</option>
                 <option>41677</option>
+                <option>41885</option>
                 <option>42079</option>
               </select>
             </div>
@@ -66,6 +68,7 @@
                   <th>wa_notif</th>
                   <th>wa_number</th>
                   <th>wa_verified</th>
+                  <th>wa_lid</th>
                   <th>actions</th>
                 </tr>
               </thead>
@@ -166,6 +169,7 @@
           <td>${u.wa_notif}</td>
           <td>${u.wa_number || ''}</td>
           <td>${u.wa_verified}</td>
+          <td>${u.wa_lid || ''}</td>
           <td></td>
         `
         // actions column

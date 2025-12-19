@@ -2,7 +2,7 @@ import re
 import asyncio
 import inspect
 
-from wa_automate_socket_client import SocketClient
+from src.orin_wa_report.core.openwa import SocketClient
 
 class MessageHandler:
     def __init__(self, open_wa_client: SocketClient):
