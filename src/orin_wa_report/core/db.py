@@ -119,8 +119,8 @@ Tugas Anda adalah menentukan apakah pesan user termasuk dalam kategori Manajemen
 6. Estimasi BBM: Perkiraan konsumsi bahan bakar atau biaya bensin berdasarkan aktivitas.
 
 Kriteria Output:
-- Berikan angka "1" jika pertanyaan berkaitan dengan salah satu poin di atas, meskipun disampaikan dengan bahasa santai/tidak baku.
-- Berikan angka "0" jika pesan berupa:
+- Berikan True jika pertanyaan berkaitan dengan salah satu poin di atas, meskipun disampaikan dengan bahasa santai/tidak baku.
+- Berikan False jika pesan berupa:
   a. Salam (Halo, Selamat pagi, dll) tanpa diikuti pertanyaan teknis.
   b. Pertanyaan di luar data kendaraan (Contoh: cara ganti password, harga paket produk, minta refund, atau komplain admin).
   c. Pesan tidak jelas atau hanya berisi angka/karakter acak.
@@ -229,18 +229,25 @@ Kriteria Output:
         self._conn.commit()
         return {"status": "success", "message": "Setting deleted"}
             
-    async def get_chat_filter_setting(self):
+    async def get_chat_filter_setting(self) -> tuple[Optional[str], Optional[str]]:
+        """
+        Returns a tuple of (instruction, questions).
+        """
         cursor = self._conn.cursor()
-        cursor.execute("SELECT id, setting, value FROM chat_filter_setting")
-        agents = [
-            {
-                "id": row[0],
-                "setting": row[1],
-                "value": row[2],
-            }
-            for row in cursor.fetchall()
-        ]
-        return agents
+        # Fetch only the two specific settings we need
+        cursor.execute(
+            "SELECT setting, value FROM chat_filter_setting WHERE setting IN (?, ?)",
+            ("chat_filter_instruction", "chat_filter_questions")
+        )
+        
+        # Create a lookup dict from the results
+        results = {row[0]: row[1] for row in cursor.fetchall()}
+        
+        # Return as a tuple in the specific order requested
+        return (
+            results.get("chat_filter_instruction"),
+            results.get("chat_filter_questions")
+        )
         
     async def update_chat_filter_setting(self, setting: str, data: Dict):
         value = data.get('value')
@@ -290,3 +297,7 @@ async def ensure_settings_db():
         if SETTINGS_DB is None:
             SETTINGS_DB = SettingsDB(DB_PATH)
             await SETTINGS_DB.initialize()
+            
+async def get_settings_db() -> SettingsDB:
+    await ensure_settings_db()
+    return SETTINGS_DB

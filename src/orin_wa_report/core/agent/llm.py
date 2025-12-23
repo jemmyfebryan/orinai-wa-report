@@ -9,9 +9,14 @@ from openai.types.chat import ChatCompletionMessageParam
 from src.orin_wa_report.core.openai import chat_completion
 from src.orin_wa_report.core.agent.formatted_schemas import (
     get_question_class_formatted_schema,
+    chat_filter_formatted_schema,
 )
 from src.orin_wa_report.core.agent.prompts import (
     QUESTION_CLASS_SYSTEM_PROMPT,
+    CHAT_FILTER_SYSTEM_PROMPT,
+)
+from src.orin_wa_report.core.db import (
+    get_settings_db
 )
 
 from src.orin_wa_report.core.logger import get_logger
@@ -60,3 +65,27 @@ async def get_question_class(
         )
         
     return question_class_result
+
+async def chat_filter(
+    openai_client: AsyncOpenAI,
+    messages: List[ChatCompletionMessageParam],
+) -> bool:
+    db = await get_settings_db()
+    
+    chat_filter_instruction, chat_filter_questions = await db.get_chat_filter_setting()
+    
+    chat_filter_result: Dict = await chat_completion(
+        openai_client=openai_client,
+        user_prompt=messages,
+        system_prompt=CHAT_FILTER_SYSTEM_PROMPT.format(
+            chat_filter_instruction=chat_filter_instruction,
+            chat_filter_questions=chat_filter_questions,
+        ),
+        formatted_schema=chat_filter_formatted_schema(),
+        model_name="gpt-4.1-nano",
+    )
+    
+    return {
+        "result": chat_filter_result.get("chat_filter_result"),
+        "confidence": chat_filter_result.get("confidence"),
+    }
