@@ -46,7 +46,7 @@ from openai import OpenAI
             
 from src.orin_wa_report.core.openwa import WAError
             
-from src.orin_wa_report.core.agent.llm import get_question_class
+from src.orin_wa_report.core.agent.llm import get_question_class, chat_filter
 from src.orin_wa_report.core.agent.config import question_class_details
 
 from src.orin_wa_report.core.utils import get_db_query_endpoint
@@ -810,6 +810,7 @@ async def chat_response(
     client,
     api_tokens: List[str],
     openai_client: OpenAI,
+    metadata: Dict = {},
     history=None
 ) -> str:
     """
@@ -1204,12 +1205,32 @@ def register_conv_handler(bot, openai_client: OpenAI):
         ]
 
         # api_token = response_sql.get("rows")[0].get("api_token")
+        if not api_tokens:
+            logger.warning(f"No api_tokens found for {phone_number}")
+            return
         
+        # Chat Filter
+        chat_filter_dict = await chat_filter(
+            openai_client=openai_client,
+            message=msg["data"].get("body")
+        )
+        
+        chat_filter_result = chat_filter_dict.get("result")
+        chat_filter_confidence = chat_filter_dict.get("confidence")
+        
+        if not chat_filter_result:
+            logger.warning(f"Chat is filtered for {phone_number}, confidence: {chat_filter_confidence}")
+            return
+        
+        # TODO: SEND CONFIDENCE AND REPLY TO JEMMY
+        logger.info(f"Chat from {phone_number} is proceed with confidence: {chat_filter_confidence}")
+            
         await chat_response(
             msg=msg,
             client=client,
             api_tokens=api_tokens,
-            openai_client=openai_client
+            openai_client=openai_client,
+            metadata={"confidence": chat_filter_confidence}
         )
 
 # -----------------------------

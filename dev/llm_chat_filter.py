@@ -6,7 +6,7 @@ import time
 client = create_client()
 
 async def chat_filter_func(msg):
-    return await chat_filter(openai_client=client, messages=msg)
+    return await chat_filter(openai_client=client, message=msg)
     
 
 if __name__ == "__main__":
@@ -28,12 +28,7 @@ if __name__ == "__main__":
     time_now = time.time()
     for msg in message_test:
         result = asyncio.run(chat_filter_func( 
-            [
-                {
-                    "role": "user",
-                    "content": msg
-                }
-            ]    
+            msg
         ))
         print(result)
         print(f"Time needed: {time.time() - time_now}")
