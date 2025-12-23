@@ -61,11 +61,18 @@ class SettingsDB:
                 setting TEXT NOT NULL UNIQUE,
                 value TEXT
             );
+            
+            CREATE TABLE IF NOT EXISTS chat_filter_setting (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                setting TEXT NOT NULL UNIQUE,
+                value TEXT
+            )
             """
         )
         self._conn.commit()
         
         # Default Value
+        ## Notification Setting Default Value
         try:
             c.execute("SELECT setting FROM notification_setting WHERE setting=?", ("allowed_alert_type",))
             if c.fetchone() is None:
@@ -91,12 +98,62 @@ class SettingsDB:
                 )
                 self._conn.commit()
                 logger.info("Default notification prompt initialized")
-                return True
-            
-            return False
         except Exception as e:
             logger.error(f"Error initializing default notification setting: {e}")
-            return False
+            
+        ## Chat Filter Setting Default Value
+        try:
+            c.execute("SELECT setting FROM chat_filter_setting WHERE setting=?", ("chat_filter_instruction",))
+            if c.fetchone() is None:
+                c.execute(
+                    "INSERT INTO chat_filter_setting (setting, value) VALUES (?, ?)",
+                    (
+                        "chat_filter_instruction",
+                        """
+Tugas Anda adalah menentukan apakah pesan user termasuk dalam kategori Manajemen Armada/Kendaraan berikut:
+1. Waktu Operasional: Jam kerja, waktu mulai/berhenti, durasi idle (mesin nyala tapi diam), dan durasi moving (perjalanan).
+2. Utilisasi Kendaraan: Jumlah hari kendaraan tidak beroperasi atau frekuensi penggunaan kendaraan.
+3. Jarak Tempuh: Estimasi kilometer (KM) yang ditempuh dalam periode tertentu.
+4. Perilaku Berkendara: Insiden keselamatan seperti mengebut (overspeed), pengereman mendadak (braking), akselerasi tajam (speedup), dan manuver tajam (cornering).
+5. Analisis Kecepatan: Data kecepatan rata-rata atau kecepatan maksimal kendaraan.
+6. Estimasi BBM: Perkiraan konsumsi bahan bakar atau biaya bensin berdasarkan aktivitas.
+
+Kriteria Output:
+- Berikan angka "1" jika pertanyaan berkaitan dengan salah satu poin di atas, meskipun disampaikan dengan bahasa santai/tidak baku.
+- Berikan angka "0" jika pesan berupa:
+  a. Salam (Halo, Selamat pagi, dll) tanpa diikuti pertanyaan teknis.
+  b. Pertanyaan di luar data kendaraan (Contoh: cara ganti password, harga paket produk, minta refund, atau komplain admin).
+  c. Pesan tidak jelas atau hanya berisi angka/karakter acak.
+"""
+                    )
+                )
+                self._conn.commit()
+                logger.info("Default chat filter instruction setting initialized")
+                
+            c.execute("SELECT setting FROM chat_filter_setting WHERE setting=?", ("chat_filter_questions",))
+            if c.fetchone() is None:
+                c.execute(
+                    "INSERT INTO chat_filter_setting (setting, value) VALUES (?, ?)",
+                    (
+                        "chat_filter_questions",
+                        """
+- "Mobil B 1234 ABC kemarin mulai jalan jam berapa ya?"
+- "Berapa lama total waktu idle truk saya selama seminggu terakhir?"
+- "Tampilkan daftar kendaraan yang tidak jalan sama sekali di hari kerja bulan ini."
+- "Berapa estimasi jarak tempuh unit Avanza saya dari tanggal 1 sampai 10?"
+- "Siapa sopir yang paling sering ngerem mendadak kemarin?"
+- "Berapa kecepatan maksimal yang dicapai bus nomor 05 tadi siang?"
+- "Estimasi bensin yang habis buat perjalanan ke Bandung kemarin berapa rupiah?"
+- "Apakah ada kendaraan yang overspeed di jalan tol tadi pagi?"
+- "Total jam operasional semua kendaraan saya di bulan Desember."
+- "Berapa hari mobil saya nganggur dalam sebulan ini?"
+"""
+                    )
+                )
+                self._conn.commit()
+                logger.info("Default chat filter questions setting initialized")
+        except Exception as e:
+            logger.error(f"Error initializing default chat filter setting: {e}")
             
     async def get_notification_setting(self):
         cursor = self._conn.cursor()
@@ -171,6 +228,45 @@ class SettingsDB:
             raise ValueError("Setting not found")
         self._conn.commit()
         return {"status": "success", "message": "Setting deleted"}
+            
+    async def get_chat_filter_setting(self):
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT id, setting, value FROM chat_filter_setting")
+        agents = [
+            {
+                "id": row[0],
+                "setting": row[1],
+                "value": row[2],
+            }
+            for row in cursor.fetchall()
+        ]
+        return agents
+        
+    async def update_chat_filter_setting(self, setting: str, data: Dict):
+        value = data.get('value')
+        if (
+            not setting
+        ):
+            raise RuntimeError("Key 'setting' is required in arg data")
+        
+        cursor = self._conn.cursor()
+        try:
+            cursor.execute(
+                "UPDATE chat_filter_setting SET value=? WHERE setting=?",
+                (
+                    value,
+                    setting,
+                )
+            )
+            if cursor.rowcount == 0:
+                raise ValueError("Setting not found")
+            self._conn.commit()
+            return {
+                "setting": setting,
+                "value": value,
+            }
+        except sqlite3.IntegrityError:
+            raise RuntimeError("Setting must be unique")
 
     async def close(self):
         """Closes the connection, forcing an immediate checkpoint."""
