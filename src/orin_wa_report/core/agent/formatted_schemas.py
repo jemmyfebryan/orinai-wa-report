@@ -34,3 +34,24 @@ def chat_filter_formatted_schema():
             "additionalProperties": False
         }
     }
+    
+  
+def split_messages_formatted_schema():
+    return {
+        "name": "split_messages_result",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "split_messages_result": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "description": "Bagian pesan terurut"
+                    }
+                }
+            },
+            "required": ["split_messages_result"],
+            "additionalProperties": False
+        }
+    }

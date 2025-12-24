@@ -10,10 +10,13 @@ from src.orin_wa_report.core.openai import chat_completion
 from src.orin_wa_report.core.agent.formatted_schemas import (
     get_question_class_formatted_schema,
     chat_filter_formatted_schema,
+    split_messages_formatted_schema,
 )
 from src.orin_wa_report.core.agent.prompts import (
     QUESTION_CLASS_SYSTEM_PROMPT,
     CHAT_FILTER_SYSTEM_PROMPT,
+    SPLIT_MESSAGES_SYSTEM_PROMPT,
+    SPLIT_MESSAGES_USER_PROMPT,
 )
 from src.orin_wa_report.core.db import (
     get_settings_db
@@ -92,3 +95,29 @@ User message: \"{message}\"
         "result": chat_filter_result.get("chat_filter_result"),
         "confidence": chat_filter_result.get("confidence"),
     }
+    
+async def split_messages(
+    openai_client: AsyncOpenAI,
+    all_replies: List,
+) -> List[str]:
+    """
+    From all the replies, conclude message and split it to
+    multiple messages to be send to user.
+    
+    :param openai_client: OpenAI Client Object
+    :type openai_client: AsyncOpenAI
+    :param all_replies: List of all replies
+    :type all_replies: List
+    """
+    
+    all_replies_formatted = "\n\n".join(all_replies)
+    
+    split_messages_result: Dict = await chat_completion(
+        openai_client=openai_client,
+        user_prompt=SPLIT_MESSAGES_USER_PROMPT.format(all_replies=all_replies_formatted),
+        system_prompt=SPLIT_MESSAGES_SYSTEM_PROMPT,
+        formatted_schema=split_messages_formatted_schema(),
+        model_name="gpt-4.1-nano",
+    )
+    
+    return split_messages_result.get("split_messages_result")

@@ -39,6 +39,7 @@ import json
 import re
 import httpx
 import copy
+import random
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -46,7 +47,11 @@ from openai import OpenAI
             
 from src.orin_wa_report.core.openwa import WAError
             
-from src.orin_wa_report.core.agent.llm import get_question_class, chat_filter
+from src.orin_wa_report.core.agent.llm import (
+    get_question_class,
+    chat_filter,
+    split_messages,
+)
 from src.orin_wa_report.core.agent.config import question_class_details
 
 from src.orin_wa_report.core.utils import get_db_query_endpoint
@@ -845,6 +850,7 @@ async def chat_response(
         user_name = sender.get("pushname", "")
         text = (msg["data"].get("body") or "").strip()
         
+        all_replies = []
         reply_error = False
         
         # ensure agent is enabled to reply to this user
@@ -857,7 +863,7 @@ async def chat_response(
         if disable_agent:
             logger.warning(f"(chat_response) disable_agent is set to True for phone {phone}, agent won't reply")
             return None
-
+    
         # ensure session exists
         entry = await _SESSION_MANAGER.ensure_session(
             phone=phone,
@@ -865,6 +871,14 @@ async def chat_response(
             user_name=user_name,
             client=client
         )
+        
+        # Intro message
+        intro_message = "Kami akan bantu proses ya kak, mohon ditunggu sebentar"
+        client.sendText(phone_jid, intro_message)
+        await _DB.add_message(entry.session_id, sender="bot", body=intro_message)
+        
+        # Seen/Read the Message
+        client.sendSeen(phone_jid)
 
         # store user message
         try:
@@ -900,8 +914,7 @@ async def chat_response(
                 """Start simulating typing after 1 second delay"""
                 try:
                     await typing_task
-                    # NOTE: TEMPORARILY DISABLE SIMULATE TYPING
-                    # client.simulateTyping(phone_jid, True)
+                    client.simulateTyping(phone_jid, True)
                     logger.debug(f"Started typing indicator for {phone_jid}")
                 except asyncio.CancelledError:
                     # Typing was cancelled before starting (response was fast)
@@ -1028,18 +1041,22 @@ async def chat_response(
                 logger.info(f"All Replies: {all_replies}")
                 
                 if all_replies:
-                    # Use first answer
-                    reply = all_replies[0]
-                    logger.info(f"Use the first one of All Replies: {reply}")
+                    # # Use first answer
+                    # reply = all_replies[0]
+                    # logger.info(f"Use the first one of All Replies: {reply[:10]}")
+                    all_replies = await split_messages(
+                        openai_client=openai_client,
+                        all_replies=all_replies,
+                    )
                 else:
-                    reply = ERROR_MESSAGE
+                    all_replies = [ERROR_MESSAGE]
                     reply_error = True
                 
                 # Parse from Marksdown style to Whatsapp style
-                reply = markdown_to_whatsapp(reply)
+                all_replies = [markdown_to_whatsapp(reply) for reply in all_replies]
                 
-                if not reply:
-                    reply = ERROR_MESSAGE
+                if not all_replies:
+                    all_replies = [ERROR_MESSAGE]
                     reply_error = True
             finally:
                 # Cancel typing tasks
@@ -1047,11 +1064,10 @@ async def chat_response(
                 typing_handler.cancel()
                 
                 # Always stop typing indicator
-                # NOTE: TEMPORARILY DISABLE SIMULATE TYPING
-                # try:
-                #     client.simulateTyping(phone_jid, False)
-                # except Exception:
-                #     logger.exception("Failed to stop typing indicator")
+                try:
+                    client.simulateTyping(phone_jid, False)
+                except Exception:
+                    logger.exception("Failed to stop typing indicator")
                 
                 # Ensure the waiting task is cancelled if it's still running
                 waiting_task.cancel()
@@ -1059,24 +1075,28 @@ async def chat_response(
                 waiting_message_sent = True
     except Exception as e:
         logger.exception("Error in response chat (type=%s): %r", type(e).__name__, e)
-        reply = ERROR_MESSAGE
+        all_replies = [ERROR_MESSAGE]
         reply_error = True
 
 
     # send the reply
     try:
         if reply_error and USE_ERROR_MESSAGE:
-            client.sendText(phone_jid, reply)
-        elif not reply_error:
-            client.sendText(phone_jid, reply)
+            # client.sendText(phone_jid, reply)
+            return
+        elif not reply_error and all_replies:
+            for reply in all_replies:
+                client.sendText(phone_jid, reply)
+                await asyncio.sleep(random.uniform(1, 2))
         else:
             return
-    except Exception:
-        logger.exception("Failed to send reply to %s", phone_jid)
+    except Exception as e:
+        logger.exception(f"Failed to send reply to {phone_jid}: {str(e)}")
 
     # store bot message
     try:
-        await _DB.add_message(entry.session_id, sender="bot", body=reply)
+        for reply in all_replies:
+            await _DB.add_message(entry.session_id, sender="bot", body=reply)
     except Exception:
         logger.exception("Failed to store bot message")
 
@@ -1134,13 +1154,6 @@ def register_conv_handler(bot, openai_client: OpenAI):
         # Alternative phone number data
         wplus_phone_number = "+" + phone_number
         local_phone_number = "0" + phone_number[2:]
-        
-        # Seen/Read the Message
-        # NOTE TEMPORARILY DEACTIVATE SEEN/READ
-        # try:
-        #     client.sendSeen(raw_phone_number)
-        # except WAError:
-        #     client.sendSeen(raw_lid_number)
         
         # If phone_number is not verified
         
@@ -1224,7 +1237,7 @@ def register_conv_handler(bot, openai_client: OpenAI):
         
         # TODO: SEND CONFIDENCE AND REPLY TO JEMMY
         logger.info(f"Chat from {phone_number} is proceed with confidence: {chat_filter_confidence}")
-            
+        
         await chat_response(
             msg=msg,
             client=client,
