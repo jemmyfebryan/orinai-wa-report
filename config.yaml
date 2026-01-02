@@ -2,9 +2,9 @@ services:
   enable_agent: true
 dummy:
   enable_create_alert: false
-  enable_create_user: true
+  enable_create_user: false
 fastapi:
-  enable_send_alert: true
+  enable_send_alert: false
 server:
   host: localhost
   port: 8080
