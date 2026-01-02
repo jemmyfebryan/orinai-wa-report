@@ -71,8 +71,8 @@ async def get_question_class(
 
 async def chat_filter(
     openai_client: AsyncOpenAI,
-    # messages: List[ChatCompletionMessageParam],
-    message: str,
+    messages: List[ChatCompletionMessageParam],
+    # message: str,
 ) -> bool:
     db = await get_settings_db()
     
@@ -81,7 +81,7 @@ async def chat_filter(
     chat_filter_result: Dict = await chat_completion(
         openai_client=openai_client,
         user_prompt=f"""
-User message: \"{message}\"        
+Messages:\n\n{messages}"        
 """,
         system_prompt=CHAT_FILTER_SYSTEM_PROMPT.format(
             chat_filter_instruction=chat_filter_instruction,

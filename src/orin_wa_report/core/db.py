@@ -119,7 +119,7 @@ Tugas Anda adalah menentukan apakah pesan user termasuk dalam kategori Manajemen
 6. Estimasi BBM: Perkiraan konsumsi bahan bakar atau biaya bensin berdasarkan aktivitas.
 
 Kriteria Output:
-- Berikan True jika pertanyaan berkaitan dengan salah satu poin di atas, meskipun disampaikan dengan bahasa santai/tidak baku.
+- Berikan True jika pertanyaan berkaitan dengan salah satu poin di atas, meskipun disampaikan dengan bahasa santai/tidak baku. Pertanyaan bisa saja tersirat merujuk pesan sebelumnya.
 - Berikan False jika pesan berupa:
   a. Salam (Halo, Selamat pagi, dll) tanpa diikuti pertanyaan teknis.
   b. Pertanyaan di luar data kendaraan (Contoh: cara ganti password, harga paket produk, minta refund, atau komplain admin).

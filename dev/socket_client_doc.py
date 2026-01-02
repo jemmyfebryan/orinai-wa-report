@@ -5,6 +5,8 @@ NUMBER_lid = '12816215965755@lid'
 NUMBER_cus = '6285850434383@c.us'
 # NUMBER_cus = '62895623453312@c.us'
 
+pina_lid = '229037905572043@lid'
+
 client = SocketClient('http://localhost:8003/', 'my_secret_api_key')
 
 import asyncio

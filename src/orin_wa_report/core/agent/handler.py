@@ -77,12 +77,29 @@ db_query_url = get_db_query_endpoint(name=APP_STAGE)
 # Development Configuration
 # -----------------------------
     
-USE_SENDER_PHONE_MAPPING = True
-USE_RECEIVER_PHONE_MAPPING = False
+USE_SENDER_PHONE_MAPPING = False
+USE_RECEIVER_PHONE_MAPPING = True
 
+## Key is the actual sender of message, value is the agent will assume
+## the sender is the value phone number
 SENDER_PHONE_MAPPING = {
     # "12816215965755@lid": "6281333370000@c.us"
     "6285850434383@c.us": "6281333370000@c.us"
+}
+
+## Key is the message receiver from the bot, value is where the message ended up
+## being sent to, key '*' to map all receiver
+
+## Pina as receiver
+# RECEIVER_PHONE_MAPPING = {
+#     "log": True,
+#     "*": "229037905572043@lid",
+# }
+
+## Jemmy as receiver
+RECEIVER_PHONE_MAPPING = {
+    "log": True,
+    "*": "12816215965755@lid",
 }
 
 # if APP_STAGE == "production":
@@ -809,13 +826,20 @@ async def fetch_ai_reply(
     except Exception as exc:
         logger.exception(f"Request failed for token {api_token}: {exc}")
         return None
+    
+async def send_text_wrapper(client, phone_jid, text):
+    if USE_RECEIVER_PHONE_MAPPING:
+        default_receiver = RECEIVER_PHONE_MAPPING.get("*")
+        phone_receiver = RECEIVER_PHONE_MAPPING.get(phone_jid, default_receiver)
+        client.sendText(phone_receiver, text)
+    else:
+        client.sendText(phone_jid, text)
 
 async def chat_response(
     msg: Dict[str, Any],
     client,
     api_tokens: List[str],
     openai_client: OpenAI,
-    metadata: Dict = {},
     history=None
 ) -> str:
     """
@@ -843,7 +867,10 @@ async def chat_response(
             return ""
 
         # Use ['data']['from'] to universally identified number
-        phone_jid = msg["data"].get("from")
+        phone_jid = msg["data"].get("from")  # This is now a LID
+        raw_phone_number = msg["data"]["sender"].get("phoneNumber")
+        
+        
         # phone_jid = msg["data"]["sender"].get("id")
         phone = phone_jid.split("@")[0]
         sender = msg["data"].get("sender", {}) or {}
@@ -873,9 +900,9 @@ async def chat_response(
         )
         
         # Intro message
-        intro_message = "Kami akan bantu proses ya kak, mohon ditunggu sebentar"
-        client.sendText(phone_jid, intro_message)
-        await _DB.add_message(entry.session_id, sender="bot", body=intro_message)
+        # intro_message = "Kami akan bantu proses ya kak, mohon ditunggu sebentar"
+        # client.sendText(phone_jid, intro_message)
+        # await _DB.add_message(entry.session_id, sender="bot", body=intro_message)
         
         # Seen/Read the Message
         client.sendSeen(phone_jid)
@@ -904,6 +931,45 @@ async def chat_response(
             # Update session activity
             await _SESSION_MANAGER.touch_session(phone, client)
             return reply
+        
+        
+        # Build a simple context from last user messages
+        messages = await _DB.get_messages_for_session(entry.session_id, limit=20)
+        
+        last_messages = messages[:10]  # Only get 10 last messages for context
+        
+        last_message = messages[0]
+        logger.info(f"Get last message: {last_message}")
+        
+        # Build LLm messages, reversed because 'messages' is most recent first
+        llm_messages = [
+            {
+                "role": "assistant" if m["sender"] == "bot" else "user",
+                "content": m["body"]
+            }
+            for m in reversed(last_messages)
+        ]
+        
+        logger.info(f"Get LLM message: {llm_messages[0]}")
+        
+        
+        # Whether Chat is filtered or not (ORIN AI will able to answer or not)
+        ## Chat Filter
+        chat_filter_dict = await chat_filter(
+            openai_client=openai_client,
+            messages=llm_messages
+        )
+        
+        chat_filter_result = chat_filter_dict.get("result")
+        chat_filter_confidence = chat_filter_dict.get("confidence")
+        
+        if not chat_filter_result:
+            logger.warning(f"Chat is filtered for {phone_jid}, confidence: {chat_filter_confidence}")
+            return
+        
+        # TODO: SEND CONFIDENCE AND REPLY TO JEMMY
+        logger.info(f"Chat from {phone_jid} is proceed with confidence: {chat_filter_confidence}")
+        
     
         # Acquire lock to process this message
         async with entry.processing_lock:
@@ -923,25 +989,6 @@ async def chat_response(
                     logger.exception("Failed to start typing indicator")
             
             typing_handler = asyncio.create_task(start_typing())
-            
-            # Build a simple context from last user messages
-            messages = await _DB.get_messages_for_session(entry.session_id, limit=20)
-            
-            last_messages = messages[:10]  # Only get 10 last messages for context
-            
-            last_message = messages[0]
-            logger.info(f"Get last message: {last_message}")
-            
-            # Build LLm messages, reversed because 'messages' is most recent first
-            llm_messages = [
-                {
-                    "role": "assistant" if m["sender"] == "bot" else "user",
-                    "content": m["body"]
-                }
-                for m in reversed(last_messages)
-            ]
-            
-            logger.info(f"Get LLM message: {llm_messages[0]}")
             
             # WhatsApp Agent Question Classes
             question_class_result = await get_question_class(
@@ -1085,8 +1132,21 @@ async def chat_response(
             # client.sendText(phone_jid, reply)
             return
         elif not reply_error and all_replies:
+            # Log text to wa
+            if USE_RECEIVER_PHONE_MAPPING and RECEIVER_PHONE_MAPPING.get("log", False):
+                await send_text_wrapper(
+                    client=client,
+                    phone_jid=phone_jid,
+                    text=f"Text incoming from {raw_phone_number}, {phone_jid}:",
+                )
+                
             for reply in all_replies:
-                client.sendText(phone_jid, reply)
+                await send_text_wrapper(
+                    client=client,
+                    phone_jid=phone_jid,
+                    text=reply,
+                )
+                # client.sendText(phone_jid, reply)
                 await asyncio.sleep(random.uniform(1, 2))
         else:
             return
@@ -1222,28 +1282,11 @@ def register_conv_handler(bot, openai_client: OpenAI):
             logger.warning(f"No api_tokens found for {phone_number}")
             return
         
-        # Chat Filter
-        chat_filter_dict = await chat_filter(
-            openai_client=openai_client,
-            message=msg["data"].get("body")
-        )
-        
-        chat_filter_result = chat_filter_dict.get("result")
-        chat_filter_confidence = chat_filter_dict.get("confidence")
-        
-        if not chat_filter_result:
-            logger.warning(f"Chat is filtered for {phone_number}, confidence: {chat_filter_confidence}")
-            return
-        
-        # TODO: SEND CONFIDENCE AND REPLY TO JEMMY
-        logger.info(f"Chat from {phone_number} is proceed with confidence: {chat_filter_confidence}")
-        
         await chat_response(
             msg=msg,
             client=client,
             api_tokens=api_tokens,
-            openai_client=openai_client,
-            metadata={"confidence": chat_filter_confidence}
+            openai_client=openai_client
         )
 
 # -----------------------------
