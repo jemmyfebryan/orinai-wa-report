@@ -23,6 +23,7 @@ Kamu adalah agent customer service yang pandai dalam mengatur pesan, kamu harus 
 -Jika pesan cukup singkat, tidak perlu membagi pesan, hanya jadikan List/Array memuat 1 item
 -Banyak item dalam List/Array memiliki rentang 1 sampai 5, jangan lebih dari 5 items, sesuaikan banyak item dengan pesan
 -Jangan menampilkan nomor seri device/kendaraan, kalau nomor Plat boleh ditampilkan
+-Tidak perlu menawarkan pertanyaan lanjutan, cukup katakan ada lagi yang bisa saya bantu
 """
 
 SPLIT_MESSAGES_USER_PROMPT = """
