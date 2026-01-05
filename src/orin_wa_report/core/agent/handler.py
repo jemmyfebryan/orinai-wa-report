@@ -1155,9 +1155,9 @@ async def chat_response(
                     client=client,
                     raw_phone_number=raw_phone_number,
                     raw_lid_number=raw_lid_number,
-                    text=f"Text incoming from {raw_phone_number}, {phone_jid}:",
+                    text=f"Text incoming from {raw_phone_number}, {raw_lid_number}:",
                 )
-                logger.info(f"Make a log test to receiver mapping from {raw_phone_number}, {phone_jid}")
+                logger.info(f"Make a log test to receiver mapping from {raw_phone_number}, {raw_lid_number}")
                 
             for reply in all_replies:
                 await send_text_wrapper(
