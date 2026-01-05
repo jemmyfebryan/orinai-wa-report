@@ -211,6 +211,46 @@ async def send_messages(req: BulkMessageRequest):
 
     return {"status": "queued", "count": len(req.messages)}
 
+class SendFileRequest(BaseModel):
+    to: str
+    to_fallback: Optional[str] = None
+    file: str # This is the base64 DataURL or Path
+    filename: str
+    caption: str
+    quotedMsgId: Optional[str] = None # Match camelCase if required by your library
+    waitForId: bool = False
+    ptt: bool = False
+    withoutPreview: bool = True
+    hideTags: bool = False
+    viewOnce: bool = False
+
+@app.post("/send-file")
+async def send_file(req: SendFileRequest):
+    if openwa_client is None:
+        raise HTTPException(status_code=503, detail="WhatsApp client not ready")
+    
+    # 1. Convert Pydantic model to a dict, excluding internal fallback logic
+    send_args = req.model_dump(exclude={'to_fallback'})
+    
+    try:
+        try:
+            # 2. Try sending to the primary "to" address
+            result = openwa_client.sendFile(**send_args)
+        except WAError as e:
+            # 3. If fallback exists, swap "to" and try again
+            if req.to_fallback:
+                logger.warning(f"Primary recipient failed, trying fallback: {req.to_fallback}")
+                send_args["to"] = req.to_fallback
+                result = openwa_client.sendFile(**send_args)
+            else:
+                raise e
+        
+        return {"status": "success", "result": result, "sent_to": send_args["to"]}
+
+    except Exception as e:
+        logger.error(f"Failed to send file: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    
 # Dummy Development
 @app.post('/dummy/create_user')
 async def create_dummy_user(request: Request):
