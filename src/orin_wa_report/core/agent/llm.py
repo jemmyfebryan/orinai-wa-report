@@ -88,7 +88,7 @@ Messages:\n\n{messages}"
             chat_filter_questions=chat_filter_questions,
         ),
         formatted_schema=chat_filter_formatted_schema(),
-        model_name="gpt-4.1-nano",
+        model_name="gpt-4.1-mini",
     )
     
     return chat_filter_result
