@@ -1080,7 +1080,7 @@ async def chat_response(
             return
         
         # TODO: SEND CONFIDENCE AND REPLY TO JEMMY
-        logger.info(f"Chat from {phone_jid} is_processed: {chat_filter_is_processed}, is_report: {chat_filter_is_report} with confidence: {chat_filter_confidence}")
+        logger.info(f"Chat: {last_message} from {phone_jid} is_processed: {chat_filter_is_processed}, is_report: {chat_filter_is_report} with confidence: {chat_filter_confidence}")
         
         # Acquire lock to process this message
         async with entry.processing_lock:
@@ -1229,7 +1229,7 @@ async def chat_response(
                     client=client,
                     raw_phone_number=raw_phone_number,
                     raw_lid_number=raw_lid_number,
-                    text=f"Text incoming from {raw_phone_number}, {raw_lid_number}:",
+                    text=f"Text: {last_message} incoming from {raw_phone_number}, {raw_lid_number}:",
                 )
                 logger.info(f"Make a log test to receiver mapping from {raw_phone_number}, {raw_lid_number}")
             
