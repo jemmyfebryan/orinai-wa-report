@@ -153,8 +153,9 @@ Kriteria Output pada Key 'is_report':
 - "Total jam operasional semua kendaraan saya di bulan Desember."
 - "Berapa hari mobil saya nganggur dalam sebulan ini?"
 - "Bisa buatkan report dalam sebulan terakhir?"
-- "report penggunaan bensin hari ini"
+- "Report penggunaan bensin hari ini"
 - "Buatkan excel ringkasan perjalanan minggu ini"
+- "Laporan perjalanan per device sebulan terakhir"
 """
                     )
                 )

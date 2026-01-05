@@ -124,7 +124,7 @@ async def split_messages(
             extra_instructions=extra_instructions
         ),
         formatted_schema=split_messages_formatted_schema(),
-        model_name="gpt-4.1-nano",
+        model_name="gpt-4.1-mini",
     )
     
     return split_messages_result.get("split_messages_result")
