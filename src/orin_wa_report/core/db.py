@@ -127,8 +127,8 @@ Kriteria Output pada Key 'is_processed':
   c. Pesan tidak jelas atau hanya berisi angka/karakter acak.
   
 Kriteria Output pada Key 'is_report':
-- Berikan True jika pertanyaan berkaitan dengan Report Kendaraan (Poin nomor 7), meskipun disampaikan dengan bahasa santai/tidak baku. Pertanyaan bisa saja tersirat merujuk pesan sebelumnya.
-- Berikan False jika pertanyaan tidak berkaitan dengan Report Kendaraan
+- Berikan True jika pertanyaan berkaitan dengan Report atau Laporan Kendaraan (Poin nomor 7) termasuk permintaan pembuatan Excel, meskipun disampaikan dengan bahasa santai/tidak baku. Pertanyaan bisa saja tersirat merujuk pesan sebelumnya.
+- Berikan False jika pertanyaan tidak berkaitan dengan Report atau Laporan Kendaraan
 """
                     )
                 )

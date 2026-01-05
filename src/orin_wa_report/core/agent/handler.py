@@ -1080,11 +1080,8 @@ async def chat_response(
             return
         
         # TODO: SEND CONFIDENCE AND REPLY TO JEMMY
-        logger.info(f"Chat from {phone_jid} is proceed with confidence: {chat_filter_confidence}")
-        if chat_filter_is_report:
-            logger.info(f"Chat from {phone_jid} is a report!")
+        logger.info(f"Chat from {phone_jid} is_processed: {chat_filter_is_processed}, is_report: {chat_filter_is_report} with confidence: {chat_filter_confidence}")
         
-    
         # Acquire lock to process this message
         async with entry.processing_lock:
             # Start typing indicator after 1 second
@@ -1178,8 +1175,7 @@ async def chat_response(
                 logger.info(f"All Replies: {all_replies[:100]}")
                 
                 all_reports_len = len(all_reports)
-                if chat_filter_is_report:
-                    logger.info(f"Total reports: {all_reports_len}")
+                logger.info(f"Total reports: {all_reports_len}")
                 
                 if all_replies:
                     # # Use first answer
