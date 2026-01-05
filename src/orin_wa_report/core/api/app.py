@@ -230,7 +230,7 @@ async def send_file(req: SendFileRequest):
         raise HTTPException(status_code=503, detail="WhatsApp client not ready")
     
     # 1. Convert Pydantic model to a dict, excluding internal fallback logic
-    send_args = req.model_dump(exclude={'to_fallback'})
+    send_args = req.model_dump(exclude={'to_fallback'}, exclude_none=True)
     
     try:
         try:
