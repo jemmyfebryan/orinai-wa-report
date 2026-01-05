@@ -91,14 +91,12 @@ Messages:\n\n{messages}"
         model_name="gpt-4.1-nano",
     )
     
-    return {
-        "result": chat_filter_result.get("chat_filter_result"),
-        "confidence": chat_filter_result.get("confidence"),
-    }
+    return chat_filter_result
     
 async def split_messages(
     openai_client: AsyncOpenAI,
     all_replies: List,
+    chat_filter_is_report: bool,
 ) -> List[str]:
     """
     From all the replies, conclude message and split it to
@@ -112,10 +110,19 @@ async def split_messages(
     
     all_replies_formatted = "\n\n".join(all_replies)
     
+    if chat_filter_is_report:
+        extra_instructions = """
+-Agent nanti juga akan mengirimkan file excel report, jadi tambahkan pesan untuk memberitahu bahwa customer/user bisa melihat report lebih detail pada file excel yang telah saya kirim
+"""
+    else:
+        extra_instructions = "."
+    
     split_messages_result: Dict = await chat_completion(
         openai_client=openai_client,
         user_prompt=SPLIT_MESSAGES_USER_PROMPT.format(all_replies=all_replies_formatted),
-        system_prompt=SPLIT_MESSAGES_SYSTEM_PROMPT,
+        system_prompt=SPLIT_MESSAGES_SYSTEM_PROMPT.format(
+            extra_instructions=extra_instructions
+        ),
         formatted_schema=split_messages_formatted_schema(),
         model_name="gpt-4.1-nano",
     )

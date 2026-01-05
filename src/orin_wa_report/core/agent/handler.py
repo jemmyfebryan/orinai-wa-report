@@ -41,6 +41,7 @@ import httpx
 import copy
 import random
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 
 from openai import OpenAI
@@ -808,11 +809,11 @@ async def fetch_ai_reply(
         )
         response.raise_for_status()
 
-        logger.info(f"Raw status code: {response.status_code}")
-        logger.info(f"Raw response text: {response.text}")
+        logger.info(f"[chat_api] Raw status code: {response.status_code}")
+        logger.info(f"[chat_api] Raw response text: {response.text}")
 
         response_json: Dict = response.json()
-        logger.info(f"Parsed JSON: {response_json}")
+        logger.info(f"[chat_api] Parsed JSON: {response_json}")
 
         response_data = response_json.get("data", {})
         if not response_data or not response_data.get("success"):
@@ -820,15 +821,65 @@ async def fetch_ai_reply(
 
         reply = response_data.get("response")
         if not reply:
-            logger.warning(f"Unexpected API response: {response_json}")
+            logger.warning(f"[chat_api] Unexpected API response: {response_json}")
             return None
 
-        logger.info(f"ORIN AI Chat Reply: {reply}")
+        logger.info(f"[chat_api] ORIN AI Chat Reply: {reply}")
         return reply
 
     except Exception as exc:
-        logger.exception(f"Request failed for token {api_token}: {exc}")
+        logger.exception(f"[chat_api] Request failed for token {api_token}: {exc}")
         return None
+    
+async def fetch_ai_report(
+    client: httpx.AsyncClient,
+    api_token: str,
+    llm_messages,
+):
+    try:
+        response = await client.post(
+            f"{ORINAI_CHAT_ENDPOINT}/report_agent",
+            json={
+                "messages": llm_messages,
+            },
+            headers={
+                "Authorization": f"Bearer {api_token}"
+            }
+        )
+        response.raise_for_status()
+
+        logger.info(f"[report_agent] Raw status code: {response.status_code}")
+
+        response_json: Dict = response.json()
+
+        response_data = response_json.get("data", "")
+        if not response_data:
+            return None
+
+        return response_data
+
+    except Exception as exc:
+        logger.exception(f"[report_agent] Request failed for token {api_token}: {exc}")
+        return None
+    
+async def full_fetch_ai(
+    httpx_client: httpx.AsyncClient,
+    token: str,
+    llm_messages,
+    bot_agent_id: int,
+    chat_filter_is_report: bool
+):
+    """Helper to handle both tasks for a single token concurrently"""
+    reply_task = fetch_ai_reply(httpx_client, token, llm_messages, bot_agent_id)
+    
+    if chat_filter_is_report:
+        report_task = fetch_ai_report(httpx_client, token, llm_messages)
+        # Run reply and report for this specific token in parallel
+        return await asyncio.gather(reply_task, report_task)
+    
+    # If no report needed, return reply and None for the report slot
+    reply = await reply_task
+    return reply, None
     
 async def send_text_wrapper(
     client,
@@ -850,6 +901,49 @@ async def send_text_wrapper(
             client.sendText(raw_phone_number, text)
         except WAError:
             client.sendText(raw_lid_number, text)
+            
+async def send_file_wrapper(
+    client,
+    raw_phone_number: str,
+    raw_lid_number: str,
+    file: str,
+    filename: str = "file",
+    caption: str = "",
+):
+    if USE_RECEIVER_PHONE_MAPPING:
+        default_receiver = RECEIVER_PHONE_MAPPING.get("*")
+        mapped_receiver = RECEIVER_PHONE_MAPPING.get(raw_phone_number, default_receiver)
+        phone_receiver = mapped_receiver.get("phone")
+        lid_receiver = mapped_receiver.get("lid")
+        try:
+            client.sendFile(
+                phone_receiver, 
+                file, 
+                filename, 
+                caption
+            )
+        except WAError:
+            client.sendFile(
+                lid_receiver, 
+                file, 
+                filename, 
+                caption
+            )
+    else:
+        try:
+            client.sendFile(
+                raw_phone_number, 
+                file, 
+                filename, 
+                caption
+            )
+        except WAError:
+            client.sendFile(
+                raw_lid_number, 
+                file, 
+                filename, 
+                caption
+            )
 
 async def chat_response(
     msg: Dict[str, Any],
@@ -972,20 +1066,23 @@ async def chat_response(
         
         # Whether Chat is filtered or not (ORIN AI will able to answer or not)
         ## Chat Filter
-        chat_filter_dict = await chat_filter(
+        chat_filter_dict: Dict = await chat_filter(
             openai_client=openai_client,
             messages=llm_messages
         )
         
-        chat_filter_result = chat_filter_dict.get("result")
+        chat_filter_is_processed = chat_filter_dict.get("is_processed")
+        chat_filter_is_report = chat_filter_dict.get("is_report")
         chat_filter_confidence = chat_filter_dict.get("confidence")
         
-        if not chat_filter_result:
-            logger.warning(f"Chat is filtered for {phone_jid}, confidence: {chat_filter_confidence}")
+        if not chat_filter_is_processed:
+            logger.warning(f"Chat: {last_message} is filtered from {phone_jid}, confidence: {chat_filter_confidence}")
             return
         
         # TODO: SEND CONFIDENCE AND REPLY TO JEMMY
         logger.info(f"Chat from {phone_jid} is proceed with confidence: {chat_filter_confidence}")
+        if chat_filter_is_report:
+            logger.info(f"Chat from {phone_jid} is a report!")
         
     
         # Acquire lock to process this message
@@ -1058,51 +1155,31 @@ async def chat_response(
             try:
                 bot_agent_id = await get_agent_id()
                 
-                # all_replies = []
-                # for api_token in api_tokens:
-                #     async with httpx.AsyncClient(timeout=90.0) as httpx_client:
-                #         response = await httpx_client.post(
-                #             f"{ORINAI_CHAT_ENDPOINT}/chat_api",
-                #             json={
-                #                 "messages": llm_messages,
-                #                 "agent_id": bot_agent_id,
-                #             },
-                #             headers={
-                #                 "Authorization": f"Bearer {api_token}"
-                #             }
-                #         )
-                #     response.raise_for_status()
-                #     logger.info(f"Raw status code: {response.status_code}")
-                #     logger.info(f"Raw response text: {response.text}")
-
-                #     response_json: Dict = response.json()
-                #     logger.info(f"Parsed JSON: {response_json}")
-                    
-                #     response_data = response_json.get("data", {})
-                    
-                #     if not response_data: continue
-                #     if not response_data.get("success"): continue
-                        
-                #     reply = response_data.get("response")
-                #     if not reply:
-                #         logger.warning(f"Unexpected API response: {response_json}")
-                #         # reply = ERROR_MESSAGE
-                #         # reply_error = True
-                #         continue
-                    
-                #     logger.info(f"ORIN AI Chat Reply: {reply}")
-                #     all_replies.append(reply)
-                
                 async with httpx.AsyncClient(timeout=90.0) as httpx_client:
-                    tasks = [
-                        fetch_ai_reply(httpx_client, token, llm_messages, bot_agent_id)
+                    # Create a list of "combined" tasks
+                    combined_tasks = [
+                        full_fetch_ai(
+                            httpx_client=httpx_client,
+                            token=token,
+                            llm_messages=llm_messages,
+                            bot_agent_id=bot_agent_id,
+                            chat_filter_is_report=chat_filter_is_report
+                        )
                         for token in api_tokens
                     ]
 
-                    all_replies = await asyncio.gather(*tasks, return_exceptions=False)
-                all_replies = [reply for reply in all_replies if reply]
+                    # Run every single request (replies AND reports) simultaneously
+                    results = await asyncio.gather(*combined_tasks)
+
+                # Flatten and filter results
+                all_replies = [r[0] for r in results if r[0]]
+                all_reports = [r[1] for r in results if r[1]]
                 
-                logger.info(f"All Replies: {all_replies}")
+                logger.info(f"All Replies: {all_replies[:100]}")
+                
+                all_reports_len = len(all_reports)
+                if chat_filter_is_report:
+                    logger.info(f"Total reports: {all_reports_len}")
                 
                 if all_replies:
                     # # Use first answer
@@ -1111,6 +1188,7 @@ async def chat_response(
                     all_replies = await split_messages(
                         openai_client=openai_client,
                         all_replies=all_replies,
+                        chat_filter_is_report=(chat_filter_is_report and all_reports_len)
                     )
                 else:
                     all_replies = [ERROR_MESSAGE]
@@ -1158,7 +1236,24 @@ async def chat_response(
                     text=f"Text incoming from {raw_phone_number}, {raw_lid_number}:",
                 )
                 logger.info(f"Make a log test to receiver mapping from {raw_phone_number}, {raw_lid_number}")
+            
+            # All File Send (reports)
+            for i, report in enumerate(all_reports):
+                timezone_jakarta = timezone(timedelta(hours=7))
+                time_jakarta = datetime.now(timezone_jakarta)
+                report_filename = time_jakarta.strftime(f"{i+1}_orin_report_%d%m%Y_%H%M%S.xlsx")
                 
+                await send_file_wrapper(
+                    client=client,
+                    raw_phone_number=raw_phone_number,
+                    raw_lid_number=raw_lid_number,
+                    file=report,
+                    filename=report_filename,
+                    caption=""
+                )
+                await asyncio.sleep(random.uniform(1, 2))
+            
+            # All Message Replies
             for reply in all_replies:
                 await send_text_wrapper(
                     client=client,

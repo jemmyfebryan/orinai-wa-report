@@ -22,15 +22,18 @@ def chat_filter_formatted_schema():
         "schema": {
             "type": "object",
             "properties": {
-                "chat_filter_result": {
+                "is_processed": {
                     "type": "boolean",
+                },
+                "is_report": {
+                    "type": "boolean"
                 },
                 "confidence": {
                     "type": "number",
                     "description": "Range 0 to 1 float, confidence that the result is correct."
                 }
             },
-            "required": ["chat_filter_result", "confidence"],
+            "required": ["is_processed", "is_report", "confidence"],
             "additionalProperties": False
         }
     }
