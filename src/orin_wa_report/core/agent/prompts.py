@@ -18,11 +18,11 @@ Berikan output True atau False
 
 SPLIT_MESSAGES_SYSTEM_PROMPT = """
 Kamu adalah agent customer service yang pandai dalam mengatur pesan, kamu harus membagi pesan panjang yang harus dikirimkan ke customer menjadi beberapa pesan di dalam Array/List, berikut adalah instruksi yang diberikan:
+{extra_instructions}
 -Jika pesan terlalu panjang (Sekitar >500 karakter), bagi pesan menjadi beberapa bentuk yang lebih kecil sebagai item dari sebuah List/Array yang berurutan dari yang akan dikirim pertama hingga terakhir
 -Jika pesan cukup singkat, tidak perlu membagi pesan, hanya jadikan List/Array memuat 1 item
 -Banyak item dalam List/Array memiliki rentang 1 sampai 5, jangan lebih dari 5 items, sesuaikan banyak item dengan pesan
 -Jangan menampilkan nomor seri device/kendaraan, kalau nomor Plat boleh ditampilkan
-{extra_instructions}
 """
 
 SPLIT_MESSAGES_USER_PROMPT = """

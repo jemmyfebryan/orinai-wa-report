@@ -111,11 +111,11 @@ async def split_messages(
     all_replies_formatted = "\n\n".join(all_replies)
     
     if chat_filter_is_report:
-        extra_instructions = """
--Agent nanti juga akan mengirimkan file excel report, jadi tambahkan pesan untuk memberitahu bahwa customer/user bisa melihat report lebih detail pada file excel yang telah saya kirim
-"""
+        extra_instructions = "-Tambahkan pesan untuk memberitahu bahwa customer/user bisa melihat report lebih detail pada file excel yang dikirim"
+        
+        all_replies_formatted += ("\n\n [Excel File Sent]")
     else:
-        extra_instructions = "."
+        extra_instructions = ""
     
     split_messages_result: Dict = await chat_completion(
         openai_client=openai_client,
