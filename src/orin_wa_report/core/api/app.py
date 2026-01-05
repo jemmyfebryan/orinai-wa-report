@@ -217,53 +217,43 @@ class SendFileRequest(BaseModel):
     file: str # This is the base64 DataURL or Path
     filename: str
     caption: str
-    quotedMsgId: Optional[str] = None # Match camelCase if required by your library
-    waitForId: bool = False
-    ptt: bool = False
-    withoutPreview: bool = True
-    hideTags: bool = False
-    viewOnce: bool = False
     
 @app.post("/send-file")
 async def send_file(req: SendFileRequest):
     if openwa_client is None:
         raise HTTPException(status_code=503, detail="WhatsApp client not ready")
 
-    def prepare_args(target_id: str):
-        # Build the bare minimum required payload
-        args = {
-            "to": target_id,
-            "file": req.file,
-            "filename": req.filename or "file.xlsx",
-            "caption": req.caption or ""
-        }
-        
-        # Only add these if they are True/Present. 
-        # Sending 'False' can sometimes trigger the 'undefined' bug in JS bridges.
-        if req.quotedMsgId: args["quotedMsgId"] = req.quotedMsgId
-        if req.waitForId: args["waitForId"] = True
-        if req.ptt: args["ptt"] = True
-        if req.withoutPreview: args["withoutPreview"] = True
-        if req.hideTags: args["hideTags"] = True
-        if req.viewOnce: args["viewOnce"] = True
-        
-        return args
+    # Define the helper to call the function positionally
+    def call_send_file(target_to):
+        # We pass only the values in the specific order the library expects:
+        # 1. to, 2. file, 3. filename, 4. caption
+        return openwa_client.sendFile(
+            target_to, 
+            req.file, 
+            req.filename, 
+            req.caption
+        )
 
     try:
         try:
-            current_args = prepare_args(req.to)
-            result = openwa_client.sendFile(**current_args)
+            # Try with primary 'to'
+            result = call_send_file(req.to)
         except Exception:
+            # Try with fallback if primary fails
             if req.to_fallback:
-                current_args = prepare_args(req.to_fallback)
-                result = openwa_client.sendFile(**current_args)
+                result = call_send_file(req.to_fallback)
             else:
                 raise
-        
-        return {"status": "success", "result": str(result)}
+            
+        return JSONResponse(
+            content={"status": "success", "result": str(result)},
+            status_code=200, # Changed to 200 for success
+        )
     except Exception as e:
-        # This will help us see if it's still the 'normalize' error or something else
-        raise HTTPException(status_code=500, detail=f"Bridge Error: {str(e)}")
+        return JSONResponse(
+            content={"status": "error", "detail": str(e)},
+            status_code=500,
+        )
     
 # Dummy Development
 @app.post('/dummy/create_user')
