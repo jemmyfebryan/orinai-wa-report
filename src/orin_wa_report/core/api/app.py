@@ -223,33 +223,47 @@ class SendFileRequest(BaseModel):
     withoutPreview: bool = True
     hideTags: bool = False
     viewOnce: bool = False
-
+    
 @app.post("/send-file")
 async def send_file(req: SendFileRequest):
     if openwa_client is None:
         raise HTTPException(status_code=503, detail="WhatsApp client not ready")
-    
-    # 1. Convert Pydantic model to a dict, excluding internal fallback logic
-    send_args = req.model_dump(exclude={'to_fallback'}, exclude_none=True)
-    
+
+    def prepare_args(target_id: str):
+        # Build the bare minimum required payload
+        args = {
+            "to": target_id,
+            "file": req.file,
+            "filename": req.filename or "file.xlsx",
+            "caption": req.caption or ""
+        }
+        
+        # Only add these if they are True/Present. 
+        # Sending 'False' can sometimes trigger the 'undefined' bug in JS bridges.
+        if req.quotedMsgId: args["quotedMsgId"] = req.quotedMsgId
+        if req.waitForId: args["waitForId"] = True
+        if req.ptt: args["ptt"] = True
+        if req.withoutPreview: args["withoutPreview"] = True
+        if req.hideTags: args["hideTags"] = True
+        if req.viewOnce: args["viewOnce"] = True
+        
+        return args
+
     try:
         try:
-            # 2. Try sending to the primary "to" address
-            result = openwa_client.sendFile(**send_args)
-        except WAError as e:
-            # 3. If fallback exists, swap "to" and try again
+            current_args = prepare_args(req.to)
+            result = openwa_client.sendFile(**current_args)
+        except Exception:
             if req.to_fallback:
-                logger.warning(f"Primary recipient failed, trying fallback: {req.to_fallback}")
-                send_args["to"] = req.to_fallback
-                result = openwa_client.sendFile(**send_args)
+                current_args = prepare_args(req.to_fallback)
+                result = openwa_client.sendFile(**current_args)
             else:
-                raise e
+                raise
         
-        return {"status": "success", "result": result, "sent_to": send_args["to"]}
-
+        return {"status": "success", "result": str(result)}
     except Exception as e:
-        logger.error(f"Failed to send file: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # This will help us see if it's still the 'normalize' error or something else
+        raise HTTPException(status_code=500, detail=f"Bridge Error: {str(e)}")
     
 # Dummy Development
 @app.post('/dummy/create_user')
