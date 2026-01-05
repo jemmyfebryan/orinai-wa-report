@@ -99,7 +99,10 @@ SENDER_PHONE_MAPPING = {
 ## Jemmy as receiver
 RECEIVER_PHONE_MAPPING = {
     "log": True,
-    "*": "12816215965755@lid",
+    "*": {
+        "phone": "6285850434383@c.us",
+        "lid": "12816215965755@lid"
+    },
 }
 
 # if APP_STAGE == "production":
@@ -827,13 +830,26 @@ async def fetch_ai_reply(
         logger.exception(f"Request failed for token {api_token}: {exc}")
         return None
     
-async def send_text_wrapper(client, phone_jid, text):
+async def send_text_wrapper(
+    client,
+    raw_phone_number: str,
+    raw_lid_number: str,
+    text: str,
+):
     if USE_RECEIVER_PHONE_MAPPING:
         default_receiver = RECEIVER_PHONE_MAPPING.get("*")
-        phone_receiver = RECEIVER_PHONE_MAPPING.get(phone_jid, default_receiver)
-        client.sendText(phone_receiver, text)
+        mapped_receiver = RECEIVER_PHONE_MAPPING.get(raw_phone_number, default_receiver)
+        phone_receiver = mapped_receiver.get("phone")
+        lid_receiver = mapped_receiver.get("lid")
+        try:
+            client.sendText(phone_receiver, text)
+        except WAError:
+            client.sendText(lid_receiver, text)
     else:
-        client.sendText(phone_jid, text)
+        try:
+            client.sendText(raw_phone_number, text)
+        except WAError:
+            client.sendText(raw_lid_number, text)
 
 async def chat_response(
     msg: Dict[str, Any],
@@ -869,6 +885,7 @@ async def chat_response(
         # Use ['data']['from'] to universally identified number
         phone_jid = msg["data"].get("from")  # This is now a LID
         raw_phone_number = msg["data"]["sender"].get("phoneNumber")
+        raw_lid_number = msg["data"]["sender"].get("lid")
         
         
         # phone_jid = msg["data"]["sender"].get("id")
@@ -1136,14 +1153,17 @@ async def chat_response(
             if USE_RECEIVER_PHONE_MAPPING and RECEIVER_PHONE_MAPPING.get("log", False):
                 await send_text_wrapper(
                     client=client,
-                    phone_jid=phone_jid,
+                    raw_phone_number=raw_phone_number,
+                    raw_lid_number=raw_lid_number,
                     text=f"Text incoming from {raw_phone_number}, {phone_jid}:",
                 )
+                logger.info(f"Make a log test to receiver mapping from {raw_phone_number}, {phone_jid}")
                 
             for reply in all_replies:
                 await send_text_wrapper(
                     client=client,
-                    phone_jid=phone_jid,
+                    raw_phone_number=raw_phone_number,
+                    raw_lid_number=raw_lid_number,
                     text=reply,
                 )
                 # client.sendText(phone_jid, reply)
