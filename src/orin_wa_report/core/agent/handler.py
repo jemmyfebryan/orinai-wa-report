@@ -77,7 +77,7 @@ db_query_url = get_db_query_endpoint(name=APP_STAGE)
 # Development Configuration
 # -----------------------------
     
-USE_SENDER_PHONE_MAPPING = False
+USE_SENDER_PHONE_MAPPING = True
 USE_RECEIVER_PHONE_MAPPING = True
 
 ## Key is the actual sender of message, value is the agent will assume
