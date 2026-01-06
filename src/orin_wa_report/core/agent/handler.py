@@ -85,7 +85,8 @@ USE_RECEIVER_PHONE_MAPPING = True
 ## the sender is the value phone number
 SENDER_PHONE_MAPPING = {
     # "12816215965755@lid": "6281333370000@c.us"
-    "6285850434383@c.us": "6281333370000@c.us"
+    # "6285850434383@c.us": "6281333370000@c.us"   # Pak Ali
+    "6285850434383@c.us": "628175006300@c.us"   # PT Bumimas Cargo Express
 }
 
 ## Key is the message receiver from the bot, value is where the message ended up
@@ -135,6 +136,8 @@ WAITING_MESSAGE = "Tunggu sebentar, ORIN AI sedang memproses balasan kamu"
 
 USE_ERROR_MESSAGE = False
 ERROR_MESSAGE = "Mohon maaf kami belum dapat menjawab pertanyaan Anda."
+
+IS_SINGLE_OUTPUT = True  # The chat output is either report only or reply only
 
 # -----------------------------
 # Lightweight sqlite wrapper
@@ -867,17 +870,31 @@ async def full_fetch_ai(
     token: str,
     llm_messages,
     bot_agent_id: int,
-    chat_filter_is_report: bool
+    chat_filter_is_report: bool,
+    is_single_output: bool = False
 ):
-    """Helper to handle both tasks for a single token concurrently"""
+    """
+    Optimized helper: Only executes the necessary tasks to save resources.
+    """
+    
+    # CASE 1: Single Output Mode
+    if is_single_output:
+        if chat_filter_is_report:
+            # Only execute report, skip reply entirely
+            return await fetch_ai_report(httpx_client, token, llm_messages)
+        else:
+            # Only execute reply, skip report entirely
+            return await fetch_ai_reply(httpx_client, token, llm_messages, bot_agent_id)
+
+    # CASE 2: Dual Output Mode (is_single_output is False)
     reply_task = fetch_ai_reply(httpx_client, token, llm_messages, bot_agent_id)
     
     if chat_filter_is_report:
         report_task = fetch_ai_report(httpx_client, token, llm_messages)
-        # Run reply and report for this specific token in parallel
+        # Run both concurrently
         return await asyncio.gather(reply_task, report_task)
     
-    # If no report needed, return reply and None for the report slot
+    # No report needed, return reply and None placeholder
     reply = await reply_task
     return reply, None
     
@@ -1160,7 +1177,8 @@ async def chat_response(
                             token=token,
                             llm_messages=llm_messages,
                             bot_agent_id=bot_agent_id,
-                            chat_filter_is_report=chat_filter_is_report
+                            chat_filter_is_report=chat_filter_is_report,
+                            is_single_output=IS_SINGLE_OUTPUT,
                         )
                         for token in api_tokens
                     ]
@@ -1181,6 +1199,15 @@ async def chat_response(
                     # # Use first answer
                     # reply = all_replies[0]
                     # logger.info(f"Use the first one of All Replies: {reply[:10]}")
+                    all_replies = await split_messages(
+                        openai_client=openai_client,
+                        all_replies=all_replies,
+                        chat_filter_is_report=(chat_filter_is_report and all_reports_len)
+                    )
+                elif (not all_replies) and (len(all_reports) > 0):
+                    # If there is no replies but there is report, use report replies
+                    all_replies = "[Excel File Sent]"
+                    
                     all_replies = await split_messages(
                         openai_client=openai_client,
                         all_replies=all_replies,
