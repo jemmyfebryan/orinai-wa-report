@@ -874,28 +874,33 @@ async def full_fetch_ai(
     is_single_output: bool = False
 ):
     """
-    Optimized helper: Only executes the necessary tasks to save resources.
+    Handles AI tasks with optimized execution. 
+    Always returns a tuple: (reply_result, report_result)
     """
-    
-    # CASE 1: Single Output Mode
+
+    # --- SCENARIO 1: Single Output Mode ---
     if is_single_output:
         if chat_filter_is_report:
-            # Only execute report, skip reply entirely
-            return await fetch_ai_report(httpx_client, token, llm_messages)
+            # Only run report; skip reply to save resources
+            report = await fetch_ai_report(httpx_client, token, llm_messages)
+            return None, report
         else:
-            # Only execute reply, skip report entirely
-            return await fetch_ai_reply(httpx_client, token, llm_messages, bot_agent_id)
+            # Only run reply; skip report
+            reply = await fetch_ai_reply(httpx_client, token, llm_messages, bot_agent_id)
+            return reply, None
 
-    # CASE 2: Dual Output Mode (is_single_output is False)
-    reply_task = fetch_ai_reply(httpx_client, token, llm_messages, bot_agent_id)
-    
+    # --- SCENARIO 2: Standard/Dual Output Mode ---
     if chat_filter_is_report:
+        # Run both concurrently for efficiency
+        reply_task = fetch_ai_reply(httpx_client, token, llm_messages, bot_agent_id)
         report_task = fetch_ai_report(httpx_client, token, llm_messages)
-        # Run both concurrently
-        return await asyncio.gather(reply_task, report_task)
+        
+        # gather returns a list, so we convert or unpack to ensure a tuple
+        reply, report = await asyncio.gather(reply_task, report_task)
+        return reply, report
     
-    # No report needed, return reply and None placeholder
-    reply = await reply_task
+    # Standard mode but no report requested
+    reply = await fetch_ai_reply(httpx_client, token, llm_messages, bot_agent_id)
     return reply, None
     
 async def send_text_wrapper(
@@ -1265,6 +1270,8 @@ async def chat_response(
                 timezone_jakarta = timezone(timedelta(hours=7))
                 time_jakarta = datetime.now(timezone_jakarta)
                 report_filename = time_jakarta.strftime(f"{i+1}_orin_report_%d%m%Y_%H%M%S.xlsx")
+                
+                logger.info(f"[chat_response] Sending excel file: {report_filename}")
                 
                 await send_file_wrapper(
                     client=client,
