@@ -1169,7 +1169,7 @@ async def chat_response(
             try:
                 bot_agent_id = await get_agent_id()
                 
-                async with httpx.AsyncClient(timeout=90.0) as httpx_client:
+                async with httpx.AsyncClient(timeout=300.0) as httpx_client:
                     # Create a list of "combined" tasks
                     combined_tasks = [
                         full_fetch_ai(
