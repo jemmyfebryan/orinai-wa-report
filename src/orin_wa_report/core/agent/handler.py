@@ -1140,7 +1140,7 @@ async def chat_response(
                 return           
             
             # POST to ORIN AI Chat
-            logger.info(f"POST to ORIN AI Chat with token: {api_tokens}")
+            logger.info(f"POST to ORIN AI with token: {api_tokens}")
             
             # Create an event to track if the waiting message was sent
             waiting_message_sent = False
@@ -1190,7 +1190,7 @@ async def chat_response(
                 all_replies = [r[0] for r in results if r[0]]
                 all_reports = [r[1] for r in results if r[1]]
                 
-                logger.info(f"All Replies: {all_replies[:100]}")
+                logger.info(f"All Replies: {str(all_replies)[:100]}")
                 
                 all_reports_len = len(all_reports)
                 logger.info(f"Total reports: {all_reports_len}")
@@ -1204,7 +1204,7 @@ async def chat_response(
                         all_replies=all_replies,
                         chat_filter_is_report=(chat_filter_is_report and all_reports_len)
                     )
-                elif (not all_replies) and (len(all_reports) > 0):
+                elif (not all_replies) and (all_reports_len > 0):
                     # If there is no replies but there is report, use report replies
                     all_replies = "[Excel File Sent]"
                     

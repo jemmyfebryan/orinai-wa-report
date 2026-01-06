@@ -3,6 +3,7 @@ import asyncio
 import base64
 import sqlite3
 import random
+import logging
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 
@@ -50,6 +51,13 @@ logger = get_logger(__name__, service="FastAPI")
 # FastAPI App
 app = FastAPI()
 
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Only log requests that are NOT to /settings
+        return "/settings" not in record.getMessage()
+
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+
 # Initialize ChatDB for session management
 chat_db = ChatDB(DB_PATH)
 
@@ -81,8 +89,8 @@ async def start_background_task():
 @app.on_event("shutdown")
 async def shutdown_event():
     openwa_client.disconnect()
-    await ChatDB.close()
-    await SettingsDB.close()
+    await chat_db.close()
+    await settings_db.close()
 
 # Configure CORS with allowed origins
 origins = os.getenv('CORS_ORIGINS', '').split(',')
