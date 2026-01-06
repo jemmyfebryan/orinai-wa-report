@@ -87,7 +87,6 @@ async def periodic_send_notifications():
             
             allowed_alert_type = notification_setting.get("allowed_alert_type").split(sep=";")
             
-            logger.info(f"Periodic send notifications: alllowed_alert_type: {allowed_alert_type}")
             # logger.info(notification_setting)
             
             async with httpx.AsyncClient() as client:
@@ -100,6 +99,8 @@ async def periodic_send_notifications():
                 # logger.info(f"Periodic send notifications disabled...")
                 alert_last_id = None
                 continue
+            
+            logger.info(f"Periodic send notifications: alllowed_alert_type: {allowed_alert_type}")
                 
             url = get_db_query_endpoint(name="devsites_orin_dev")
             if alert_last_id is None:
