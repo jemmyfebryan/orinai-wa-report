@@ -10,6 +10,7 @@ open-wa-session.sw_col.json
 
 # Database
 *.db
+*.db.bak
 *.db-journal
 *.db-wal
 *.db-shm

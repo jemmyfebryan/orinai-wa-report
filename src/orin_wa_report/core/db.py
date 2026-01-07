@@ -130,6 +130,9 @@ Kriteria Output pada Key 'is_processed':
 Kriteria Output pada Key 'is_report':
 - Berikan True jika pertanyaan berkaitan dengan Report atau Laporan Kendaraan (Poin nomor 7) termasuk permintaan pembuatan Excel, meskipun disampaikan dengan bahasa santai/tidak baku. Pertanyaan bisa saja tersirat merujuk pesan sebelumnya. Pilih jika menurutmu user membutuhkan file Excel karena agent nanti akan mengirimkan file Excel sesuai permintaan user.
 - Berikan False jika pertanyaan tidak berkaitan dengan Report atau Laporan Kendaraan.
+
+Kriteria Output pada Key 'is_handover':
+- Berikan True jika user membutuhkan bantuan Human Agent untuk menjawab pertanyaan, dikarenakan pertanyaan terlalu kompleks untuk dijawab oleh Agent.
 """
                     )
                 )

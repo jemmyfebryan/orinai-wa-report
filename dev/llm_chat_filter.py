@@ -18,12 +18,12 @@ if __name__ == "__main__":
     print("Starting...")
     
     message_test = [
-        # "Halo",
-        # "askdoaksoakdowad",
-        # "Saya mau nanya dong bang",
-        # "Saya mau bertanya tentang paket saya",
-        # "Yang ini gimana ya kendaraan saya",
-        # "Ini kendaraan saya kok mati kenapa?",
+        "Halo",
+        "askdoaksoakdowad",
+        "Saya mau nanya dong bang",
+        "Saya mau bertanya tentang paket saya",
+        "Yang ini gimana ya kendaraan saya",
+        "Ini kendaraan saya kok mati kenapa?",
         "Minta tolong reset device saya",
         "Penggunaan bensin sebulan terakhir berapa",
         "Boleh minta report idle kendaraan saya sebulan terakhir?",

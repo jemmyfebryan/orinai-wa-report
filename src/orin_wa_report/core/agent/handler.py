@@ -966,6 +966,18 @@ async def send_file_wrapper(
                 filename, 
                 caption
             )
+            
+async def reset_agent_after_delay(phone, delay_seconds: int):
+    """Wait for the delay, then set disable_agent back to False."""
+    await asyncio.sleep(delay_seconds)
+    try:
+        await _DB.update_config(
+            phone=phone,
+            values={"disable_agent": False}
+        )
+        logger.info(f"Successfully re-enabled agent for {phone} after delay.")
+    except Exception:
+        logger.exception(f"Failed to reset disable_agent for {phone}")
 
 async def chat_response(
     msg: Dict[str, Any],
@@ -1083,7 +1095,7 @@ async def chat_response(
             for m in reversed(last_messages)
         ]
         
-        logger.info(f"Get LLM message: {llm_messages[0]}")
+        # logger.info(f"Get LLM message: {llm_messages[0]}")
         
         
         # Whether Chat is filtered or not (ORIN AI will able to answer or not)
@@ -1095,14 +1107,33 @@ async def chat_response(
         
         chat_filter_is_processed = chat_filter_dict.get("is_processed")
         chat_filter_is_report = chat_filter_dict.get("is_report")
+        chat_filter_is_handover = chat_filter_dict.get("is_handover")
         chat_filter_confidence = chat_filter_dict.get("confidence")
+            
+        logger.info(f"Chat: {last_message} from {phone_jid} is_processed: {chat_filter_is_processed}, is_report: {chat_filter_is_report}, is_handover: {chat_filter_is_handover} with confidence: {chat_filter_confidence}")
+        
+        if chat_filter_is_handover:  # Want to talk to human agent
+            logger.debug(f"Due to handover, disable_agent for {phone_jid} set to True for the next 1 hour.")
+            await _DB.update_config(
+                phone=phone,
+                values={"disable_agent": True},
+                create_if_not_exists=True,
+            )
+            # Fire and forget: this runs in the background for 1 hour
+            asyncio.create_task(reset_agent_after_delay(phone, 3600))
+            await send_text_wrapper(
+                client=client,
+                raw_phone_number=raw_phone_number,
+                raw_lid_number=raw_lid_number,
+                text=f"Tunggu sebentar, tim CS dari ORIN akan segera membalas pesan Anda.",
+            )
+            return None
         
         if not chat_filter_is_processed:
             logger.warning(f"Chat: {last_message} is filtered from {phone_jid}, confidence: {chat_filter_confidence}")
             return
         
         # TODO: SEND CONFIDENCE AND REPLY TO JEMMY
-        logger.info(f"Chat: {last_message} from {phone_jid} is_processed: {chat_filter_is_processed}, is_report: {chat_filter_is_report} with confidence: {chat_filter_confidence}")
         
         # Acquire lock to process this message
         async with entry.processing_lock:

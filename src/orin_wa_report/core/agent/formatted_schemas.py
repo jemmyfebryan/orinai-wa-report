@@ -28,12 +28,15 @@ def chat_filter_formatted_schema():
                 "is_report": {
                     "type": "boolean"
                 },
+                "is_handover": {
+                    "type": "boolean"
+                },
                 "confidence": {
                     "type": "number",
                     "description": "Range 0 to 1 float, confidence that the result is correct."
                 }
             },
-            "required": ["is_processed", "is_report", "confidence"],
+            "required": ["is_processed", "is_report", "is_handover", "confidence"],
             "additionalProperties": False
         }
     }
