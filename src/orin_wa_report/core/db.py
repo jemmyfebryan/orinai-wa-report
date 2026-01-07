@@ -117,18 +117,19 @@ Tugas Anda adalah menentukan apakah pesan user termasuk dalam kategori Manajemen
 4. Perilaku Berkendara: Insiden keselamatan seperti mengebut (overspeed), pengereman mendadak (braking), akselerasi tajam (speedup), dan manuver tajam (cornering).
 5. Analisis Kecepatan: Data kecepatan rata-rata atau kecepatan maksimal kendaraan.
 6. Estimasi BBM: Perkiraan konsumsi bahan bakar atau biaya bensin berdasarkan aktivitas.
-7. Report/Laporan Kendaraan: Report atau Laporan tentang rangkuman/summary mengenai kendaraan dalam kurun waktu tertentu, bisa dalam bentuk Excel.
+7. Report/Laporan Kendaraan: Report atau Laporan tentang history rangkuman/summary kendaraan di kurun waktu tertentu dalam file Excel.
 
 Kriteria Output pada Key 'is_processed':
 - Berikan True jika pertanyaan berkaitan dengan salah satu poin di atas, meskipun disampaikan dengan bahasa santai/tidak baku. Pertanyaan bisa saja tersirat merujuk pesan sebelumnya.
 - Berikan False jika pesan berupa:
   a. Salam (Halo, Selamat pagi, dll) tanpa diikuti pertanyaan teknis.
   b. Pertanyaan di luar data kendaraan (Contoh: cara ganti password, harga paket produk, minta refund, atau komplain admin).
-  c. Pesan tidak jelas atau hanya berisi angka/karakter acak.
+  c. Pertanyaan kurang jelas atau kurang bisa dimengerti.
+  d. Agent tidak bisa menjawab pertanyaan
   
 Kriteria Output pada Key 'is_report':
-- Berikan True jika pertanyaan berkaitan dengan Report atau Laporan Kendaraan (Poin nomor 7) termasuk permintaan pembuatan Excel, meskipun disampaikan dengan bahasa santai/tidak baku. Pertanyaan bisa saja tersirat merujuk pesan sebelumnya.
-- Berikan False jika pertanyaan tidak berkaitan dengan Report atau Laporan Kendaraan
+- Berikan True jika pertanyaan berkaitan dengan Report atau Laporan Kendaraan (Poin nomor 7) termasuk permintaan pembuatan Excel, meskipun disampaikan dengan bahasa santai/tidak baku. Pertanyaan bisa saja tersirat merujuk pesan sebelumnya. Pilih jika menurutmu user membutuhkan file Excel karena agent nanti akan mengirimkan file Excel sesuai permintaan user.
+- Berikan False jika pertanyaan tidak berkaitan dengan Report atau Laporan Kendaraan.
 """
                     )
                 )

@@ -6,7 +6,12 @@ import time
 client = create_client()
 
 async def chat_filter_func(msg):
-    return await chat_filter(openai_client=client, message=msg)
+    return await chat_filter(openai_client=client, messages=[
+        {
+            "role": "user",
+            "content": msg
+        }
+    ])
     
 
 if __name__ == "__main__":
@@ -22,7 +27,10 @@ if __name__ == "__main__":
         "Minta tolong reset device saya",
         "Penggunaan bensin sebulan terakhir berapa",
         "Boleh minta report idle kendaraan saya sebulan terakhir?",
-        "Kendaraan saya tanggal 22 Desember 2025 menempuh berapa km?"
+        "Kendaraan saya tanggal 22 Desember 2025 menempuh berapa km?",
+        "Bisa minta history L 8274 tgl 5-6 des",
+        "tadi siang kebetulan dipakai keluar kota tapi di gps terpantau parkir di garasi",
+        "yg bermaslaah reportnya saja",
     ]
     
     time_now = time.time()
@@ -30,6 +38,8 @@ if __name__ == "__main__":
         result = asyncio.run(chat_filter_func( 
             msg
         ))
+        print("")
+        print(f"Msg: {msg}")
         print(result)
         print(f"Time needed: {time.time() - time_now}")
         time_now = time.time()
