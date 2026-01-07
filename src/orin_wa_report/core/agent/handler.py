@@ -79,7 +79,7 @@ db_query_url = get_db_query_endpoint(name=APP_STAGE)
 # -----------------------------
     
 USE_SENDER_PHONE_MAPPING = True
-USE_RECEIVER_PHONE_MAPPING = True
+USE_RECEIVER_PHONE_MAPPING = False
 
 ## Key is the actual sender of message, value is the agent will assume
 ## the sender is the value phone number
@@ -100,7 +100,7 @@ SENDER_PHONE_MAPPING = {
 
 ## Jemmy as receiver
 RECEIVER_PHONE_MAPPING = {
-    "log": True,
+    "log": False,
     "*": {
         "phone": "6285850434383@c.us",
         "lid": "12816215965755@lid"
