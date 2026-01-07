@@ -18,12 +18,12 @@ if __name__ == "__main__":
     print("Starting...")
     
     message_test = [
-        "Halo",
-        "askdoaksoakdowad",
-        "Saya mau nanya dong bang",
-        "Saya mau bertanya tentang paket saya",
-        "Yang ini gimana ya kendaraan saya",
-        "Ini kendaraan saya kok mati kenapa?",
+        # "Halo",
+        # "askdoaksoakdowad",
+        # "Saya mau nanya dong bang",
+        # "Saya mau bertanya tentang paket saya",
+        # "Yang ini gimana ya kendaraan saya",
+        # "Ini kendaraan saya kok mati kenapa?",
         "Minta tolong reset device saya",
         "Penggunaan bensin sebulan terakhir berapa",
         "Boleh minta report idle kendaraan saya sebulan terakhir?",
@@ -31,6 +31,9 @@ if __name__ == "__main__":
         "Bisa minta history L 8274 tgl 5-6 des",
         "tadi siang kebetulan dipakai keluar kota tapi di gps terpantau parkir di garasi",
         "yg bermaslaah reportnya saja",
+        "Saya ingin berbicara dengan human agent",
+        "alihkan ke orang asli",
+        "saya tidak mau dijawab AI"
     ]
     
     time_now = time.time()
