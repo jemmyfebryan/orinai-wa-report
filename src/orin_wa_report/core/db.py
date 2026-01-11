@@ -117,7 +117,8 @@ Tugas Anda adalah menentukan apakah pesan user termasuk dalam kategori Manajemen
 4. Perilaku Berkendara: Insiden keselamatan seperti mengebut (overspeed), pengereman mendadak (braking), akselerasi tajam (speedup), dan manuver tajam (cornering).
 5. Analisis Kecepatan: Data kecepatan rata-rata atau kecepatan maksimal kendaraan.
 6. Estimasi BBM: Perkiraan konsumsi bahan bakar atau biaya bensin berdasarkan aktivitas.
-7. Report/Laporan Kendaraan: Report atau Laporan tentang history rangkuman/summary kendaraan di kurun waktu tertentu dalam file Excel.
+7. Data Statis: Data mengenai lokasi, kecepatan, status kendaraan/device pada spesifik waktu tertentu
+8. Report/Laporan Kendaraan: Report atau Laporan tentang history rangkuman/summary kendaraan di kurun waktu tertentu dalam file Excel.
 
 Kriteria Output pada Key 'is_processed':
 - Berikan True jika pertanyaan berkaitan dengan salah satu poin di atas, meskipun disampaikan dengan bahasa santai/tidak baku. Pertanyaan bisa saja tersirat merujuk pesan sebelumnya.
@@ -156,6 +157,9 @@ Kriteria Output pada Key 'is_handover':
 - "Apakah ada kendaraan yang overspeed di jalan tol tadi pagi?"
 - "Total jam operasional semua kendaraan saya di bulan Desember."
 - "Berapa hari mobil saya nganggur dalam sebulan ini?"
+- "Dimana posisi mobil wuling saya"
+- "Status gps mobil xpander saya bagaimana"
+- "Mobil innova saya sekarang lagi dimana?"
 - "Bisa buatkan report dalam sebulan terakhir?"
 - "Report penggunaan bensin hari ini"
 - "Buatkan excel ringkasan perjalanan minggu ini"

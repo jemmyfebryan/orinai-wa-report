@@ -33,7 +33,9 @@ if __name__ == "__main__":
         "yg bermaslaah reportnya saja",
         "Saya ingin berbicara dengan human agent",
         "alihkan ke orang asli",
-        "saya tidak mau dijawab AI"
+        "saya tidak mau dijawab AI",
+        "dimana posisi mobil wuling saya",
+        "vario saya ada dimana sekarang?",
     ]
     
     time_now = time.time()
