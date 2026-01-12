@@ -14,6 +14,7 @@ open-wa-session.sw_col.json
 *.db-journal
 *.db-wal
 *.db-shm
+*.jsonl
 
 # Unused File
 temp_handler.py

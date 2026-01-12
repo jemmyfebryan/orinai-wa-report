@@ -1,8 +1,7 @@
-import copy
-from datetime import datetime, timedelta, timezone
 from typing import List, Dict
-import pandas as pd
-import json
+import copy
+import os
+from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
@@ -21,10 +20,15 @@ from src.orin_wa_report.core.agent.prompts import (
 from src.orin_wa_report.core.db import (
     get_settings_db
 )
+from src.orin_wa_report.core.utils import log_data
 
 from src.orin_wa_report.core.logger import get_logger
 
 logger = get_logger(__name__, service="LLM")
+
+load_dotenv()
+
+VERSION = os.getenv("VERSION")
 
 async def get_question_class(
     openai_client: AsyncOpenAI,
@@ -72,7 +76,8 @@ async def get_question_class(
 async def chat_filter(
     openai_client: AsyncOpenAI,
     messages: List[ChatCompletionMessageParam],
-    # message: str,
+    model_name: str = "gpt-4.1-mini",
+    log_data_path: str = f"./src/orin_wa_report/core/database/jsonl/chat_filters_{VERSION}.jsonl",
 ) -> bool:
     db = await get_settings_db()
     
@@ -88,8 +93,17 @@ Messages:\n\n{messages}"
             chat_filter_questions=chat_filter_questions,
         ),
         formatted_schema=chat_filter_formatted_schema(),
-        model_name="gpt-4.1-mini",
+        model_name=model_name,
     )
+    
+    if log_data_path:
+        log_data_dict = copy.deepcopy(chat_filter_result)
+        log_data_dict["messages"] = messages
+        log_data_dict["model_name"] = model_name
+        await log_data(
+            file_name=log_data_path,
+            data_dict=log_data_dict
+        )
     
     return chat_filter_result
     
