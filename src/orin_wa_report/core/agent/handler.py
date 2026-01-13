@@ -1397,24 +1397,44 @@ def register_conv_handler(bot, openai_client: OpenAI):
         max_api_token_users = 3
         
         query = f"""
-        SELECT
-            id,
-            name,
-            api_token,
-            wa_number
-        FROM users
-        WHERE
-            (
-                wa_number = :wa_number
-                OR wa_lid = :wa_lid
-                OR phone_number = :phone_number
-                OR phone_number = :wplus_phone_number
-                OR phone_number = :local_phone_number
+SELECT
+    id,
+    name,
+    api_token,
+    wa_number
+FROM (
+    SELECT
+        id,
+        name,
+        api_token,
+        wa_number,
+        updated_at,
+        ROW_NUMBER() OVER (
+            PARTITION BY (
+                CASE 
+                    WHEN parent_id IS NOT NULL AND parent_id != 0 
+                    -- Group by parent_id if it exists
+                    THEN CAST(parent_id AS CHAR) 
+                    -- Otherwise, group by unique ID so it isn't filtered
+                    ELSE CAST(id AS CHAR) 
+                END
             )
-            
-            AND deleted_at IS NULL
-        ORDER BY updated_at DESC
-        LIMIT {max_api_token_users};
+            ORDER BY updated_at DESC
+        ) as row_num
+    FROM users
+    WHERE
+        (
+            wa_number = :wa_number
+            OR wa_lid = :wa_lid
+            OR phone_number = :phone_number
+            OR phone_number = :wplus_phone_number
+            OR phone_number = :local_phone_number
+        )
+        AND deleted_at IS NULL
+) AS filtered_users
+WHERE row_num = 1
+ORDER BY updated_at DESC
+LIMIT {max_api_token_users};
         """
         # NOTE: TEMPORARILY REMOVE RULE TO BE VERIFIED
         # AND wa_verified = 1
