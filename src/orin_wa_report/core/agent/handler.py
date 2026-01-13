@@ -85,7 +85,8 @@ USE_RECEIVER_PHONE_MAPPING = False
 ## the sender is the value phone number
 SENDER_PHONE_MAPPING = {
     # "12816215965755@lid": "6281333370000@c.us"
-    "6285850434383@c.us": "6281333370000@c.us"   # Pak Ali
+    # "6285850434383@c.us": "6281333370000@c.us"   # Pak Ali
+    "6285850434383@c.us": "628563098912@c.us"   # Pak Fe
     # "6285850434383@c.us": "628175006300@c.us"   # PT Bumimas Cargo Express
 }
 
