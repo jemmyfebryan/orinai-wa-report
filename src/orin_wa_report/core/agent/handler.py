@@ -53,8 +53,12 @@ from src.orin_wa_report.core.agent.llm import (
     chat_filter,
     split_messages,
 )
+from src.orin_wa_report.core.agent.utils import (
+    markdown_to_whatsapp,
+    get_reset_password_answer,
+    get_account_status_answer,
+)
 from src.orin_wa_report.core.agent.config import question_class_details
-
 from src.orin_wa_report.core.utils import get_db_query_endpoint
 from src.orin_wa_report.core.logger import get_logger
 
@@ -756,26 +760,6 @@ async def _ensure_db_and_manager():
 GREETINGS = re.compile(r"\b(hi|hello|hai|halo|hey)\b", re.I)
 GOODBYES = re.compile(r"\b(bye|goodbye|terima kasih|thanks|thx)\b", re.I)
 
-def markdown_to_whatsapp(text: str) -> str:
-    # Bold: **text** → *text*
-    text = re.sub(r"\*\*(.*?)\*\*", r"*\1*", text)
-
-    # Italic: _text_ or *text* → _text_
-    # (Markdown often uses *italic* as well)
-    text = re.sub(r"(?<!\*)\*(?!\*)(.*?)\*(?<!\*)", r"_\1_", text)
-    text = re.sub(r"_(.*?)_", r"_\1_", text)
-
-    # Strikethrough: ~~text~~ → ~text~
-    text = re.sub(r"~~(.*?)~~", r"~\1~", text)
-
-    # Inline code: `text` → ```text```
-    text = re.sub(r"`(.*?)`", r"```\1```", text)
-
-    # Remove Markdown headers (#, ##, ### etc.)
-    text = re.sub(r"^#+\s*", "", text, flags=re.MULTILINE)
-
-    return text
-
 async def get_agent_id():
     async with httpx.AsyncClient(timeout=5.0) as httpx_client:
         response = await httpx_client.get(
@@ -1172,109 +1156,122 @@ async def chat_response(
             logger.info(f"Question class dict: {question_class_dict}")
         
             if question_class_tools == "end_session":
-                logger.info("User want to end session by chat")
+                logger.info(f"[end_session] User {phone_jid} want to end session by chat")
                 await _SESSION_MANAGER.end_session(phone=phone, client=client)
-                return           
-            
-            # POST to ORIN AI Chat
-            logger.info(f"POST to ORIN AI with token: {api_tokens}")
-            
-            # Create an event to track if the waiting message was sent
-            waiting_message_sent = False
-            
-            async def send_waiting_message():
-                """Send waiting message after 10 seconds if processing is not complete"""
-                nonlocal waiting_message_sent
-                await asyncio.sleep(10)
-                if not waiting_message_sent:
-                    try:
-                        # Stop typing before sending waiting message
-                        ## NOTE: TEMPORARILY DISABLE SIMULATE TYPING
-                        # client.simulateTyping(phone_jid, False)
-                        
-                        if USE_WAITING_MESSAGE:
-                            waiting_text = WAITING_MESSAGE
-                            client.sendText(phone_jid, waiting_text)
-                            await _DB.add_message(entry.session_id, sender="bot", body=waiting_text)
-                        waiting_message_sent = True
-                    except Exception:
-                        logger.exception("Failed to send waiting message")
-            
-            # Start the waiting message timer
-            waiting_task = asyncio.create_task(send_waiting_message())
-            
-            try:
-                bot_agent_id = await get_agent_id()
+                return      
+            elif question_class_tools == "reset_password_question":
+                logger.info("[reset_password_question]")
+                all_replies = await get_reset_password_answer()
+                all_reports = []
+            elif question_class_tools == "account_status_question":
+                logger.info("[account_status_question]")
+                all_replies = await get_account_status_answer(
+                    openai_client=openai_client,
+                    api_tokens=api_tokens,
+                    last_message=last_message,
+                )
+                all_reports = []
+            else:
+                # POST to ORIN AI Chat
+                logger.info("[continue_session]")
+                logger.info(f"POST to ORIN AI with token: {api_tokens}")
                 
-                async with httpx.AsyncClient(timeout=300.0) as httpx_client:
-                    # Create a list of "combined" tasks
-                    combined_tasks = [
-                        full_fetch_ai(
-                            httpx_client=httpx_client,
-                            token=token,
-                            llm_messages=llm_messages,
-                            bot_agent_id=bot_agent_id,
-                            chat_filter_is_report=chat_filter_is_report,
-                            is_single_output=IS_SINGLE_OUTPUT,
-                        )
-                        for token in api_tokens
-                    ]
-
-                    # Run every single request (replies AND reports) simultaneously
-                    results = await asyncio.gather(*combined_tasks)
-
-                # Flatten and filter results
-                all_replies = [r[0] for r in results if r[0]]
-                all_reports = [r[1] for r in results if r[1]]
+                # Create an event to track if the waiting message was sent
+                waiting_message_sent = False
                 
-                logger.info(f"All Replies: {str(all_replies)[:100]}")
+                async def send_waiting_message():
+                    """Send waiting message after 10 seconds if processing is not complete"""
+                    nonlocal waiting_message_sent
+                    await asyncio.sleep(10)
+                    if not waiting_message_sent:
+                        try:
+                            # Stop typing before sending waiting message
+                            ## NOTE: TEMPORARILY DISABLE SIMULATE TYPING
+                            # client.simulateTyping(phone_jid, False)
+                            
+                            if USE_WAITING_MESSAGE:
+                                waiting_text = WAITING_MESSAGE
+                                client.sendText(phone_jid, waiting_text)
+                                await _DB.add_message(entry.session_id, sender="bot", body=waiting_text)
+                            waiting_message_sent = True
+                        except Exception:
+                            logger.exception("Failed to send waiting message")
                 
-                all_reports_len = len(all_reports)
-                logger.info(f"Total reports: {all_reports_len}")
+                # Start the waiting message timer
+                waiting_task = asyncio.create_task(send_waiting_message())
                 
-                if all_replies:
-                    # # Use first answer
-                    # reply = all_replies[0]
-                    # logger.info(f"Use the first one of All Replies: {reply[:10]}")
-                    all_replies = await split_messages(
-                        openai_client=openai_client,
-                        all_replies=all_replies,
-                        chat_filter_is_report=(chat_filter_is_report and all_reports_len)
-                    )
-                elif (not all_replies) and (all_reports_len > 0):
-                    # If there is no replies but there is report, use report replies
-                    all_replies = "[Excel File Sent]"
-                    
-                    all_replies = await split_messages(
-                        openai_client=openai_client,
-                        all_replies=all_replies,
-                        chat_filter_is_report=(chat_filter_is_report and all_reports_len)
-                    )
-                else:
-                    all_replies = [ERROR_MESSAGE]
-                    reply_error = True
-                
-                # Parse from Marksdown style to Whatsapp style
-                all_replies = [markdown_to_whatsapp(reply) for reply in all_replies]
-                
-                if not all_replies:
-                    all_replies = [ERROR_MESSAGE]
-                    reply_error = True
-            finally:
-                # Cancel typing tasks
-                typing_task.cancel()
-                typing_handler.cancel()
-                
-                # Always stop typing indicator
                 try:
-                    client.simulateTyping(phone_jid, False)
-                except Exception:
-                    logger.exception("Failed to stop typing indicator")
-                
-                # Ensure the waiting task is cancelled if it's still running
-                waiting_task.cancel()
-                # Mark waiting message as sent to prevent duplicate sends
-                waiting_message_sent = True
+                    bot_agent_id = await get_agent_id()
+                    
+                    async with httpx.AsyncClient(timeout=300.0) as httpx_client:
+                        # Create a list of "combined" tasks
+                        combined_tasks = [
+                            full_fetch_ai(
+                                httpx_client=httpx_client,
+                                token=token,
+                                llm_messages=llm_messages,
+                                bot_agent_id=bot_agent_id,
+                                chat_filter_is_report=chat_filter_is_report,
+                                is_single_output=IS_SINGLE_OUTPUT,
+                            )
+                            for token in api_tokens
+                        ]
+
+                        # Run every single request (replies AND reports) simultaneously
+                        results = await asyncio.gather(*combined_tasks)
+
+                    # Flatten and filter results
+                    all_replies = [r[0] for r in results if r[0]]
+                    all_reports = [r[1] for r in results if r[1]]
+                    
+                    logger.info(f"All Replies: {str(all_replies)[:100]}")
+                    
+                    all_reports_len = len(all_reports)
+                    logger.info(f"Total reports: {all_reports_len}")
+                    
+                    if all_replies:
+                        # # Use first answer
+                        # reply = all_replies[0]
+                        # logger.info(f"Use the first one of All Replies: {reply[:10]}")
+                        all_replies = await split_messages(
+                            openai_client=openai_client,
+                            all_replies=all_replies,
+                            chat_filter_is_report=(chat_filter_is_report and all_reports_len)
+                        )
+                    elif (not all_replies) and (all_reports_len > 0):
+                        # If there is no replies but there is report, use report replies
+                        all_replies = "[Excel File Sent]"
+                        
+                        all_replies = await split_messages(
+                            openai_client=openai_client,
+                            all_replies=all_replies,
+                            chat_filter_is_report=(chat_filter_is_report and all_reports_len)
+                        )
+                    else:
+                        all_replies = [ERROR_MESSAGE]
+                        reply_error = True
+                    
+                    # Parse from Marksdown style to Whatsapp style
+                    all_replies = [markdown_to_whatsapp(reply) for reply in all_replies]
+                    
+                    if not all_replies:
+                        all_replies = [ERROR_MESSAGE]
+                        reply_error = True
+                finally:
+                    # Cancel typing tasks
+                    typing_task.cancel()
+                    typing_handler.cancel()
+                    
+                    # Always stop typing indicator
+                    try:
+                        client.simulateTyping(phone_jid, False)
+                    except Exception:
+                        logger.exception("Failed to stop typing indicator")
+                    
+                    # Ensure the waiting task is cancelled if it's still running
+                    waiting_task.cancel()
+                    # Mark waiting message as sent to prevent duplicate sends
+                    waiting_message_sent = True
     except Exception as e:
         logger.exception("Error in response chat (type=%s): %r", type(e).__name__, e)
         all_replies = [ERROR_MESSAGE]

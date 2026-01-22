@@ -111,6 +111,7 @@ async def split_messages(
     openai_client: AsyncOpenAI,
     all_replies: List,
     chat_filter_is_report: bool,
+    additional_instructions: str = "",
 ) -> List[str]:
     """
     From all the replies, conclude message and split it to
@@ -130,6 +131,9 @@ async def split_messages(
         all_replies_formatted += ("\n\n [Excel File Sent]")
     else:
         extra_instructions = ""
+    
+    if additional_instructions:
+        extra_instructions += f"\n{additional_instructions}"
     
     split_messages_result: Dict = await chat_completion(
         openai_client=openai_client,

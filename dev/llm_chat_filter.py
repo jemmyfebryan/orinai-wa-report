@@ -36,6 +36,8 @@ if __name__ == "__main__":
         "saya tidak mau dijawab AI",
         "dimana posisi mobil wuling saya",
         "vario saya ada dimana sekarang?",
+        "Halo kapan ya terakhir kali kendaraan saya dimatikan",
+        "Kapan lisensi kendaraan saya habis",
     ]
     
     time_now = time.time()
