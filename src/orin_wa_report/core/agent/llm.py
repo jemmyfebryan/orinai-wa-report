@@ -16,6 +16,8 @@ from src.orin_wa_report.core.agent.prompts import (
     CHAT_FILTER_SYSTEM_PROMPT,
     SPLIT_MESSAGES_SYSTEM_PROMPT,
     SPLIT_MESSAGES_USER_PROMPT,
+    CHAT_FILTER_INSTRUCTION as chat_filter_instruction,
+    CHAT_FILTER_QUESTIONS as chat_filter_questions,
 )
 from src.orin_wa_report.core.db import (
     get_settings_db
@@ -81,7 +83,7 @@ async def chat_filter(
 ) -> bool:
     db = await get_settings_db()
     
-    chat_filter_instruction, chat_filter_questions = await db.get_chat_filter_setting()
+    # chat_filter_instruction, chat_filter_questions = await db.get_chat_filter_setting()
     
     chat_filter_result: Dict = await chat_completion(
         openai_client=openai_client,

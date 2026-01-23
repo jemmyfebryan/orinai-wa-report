@@ -16,4 +16,3 @@ question_class_details = {
         "tools": "end_session",
     }
 }
-

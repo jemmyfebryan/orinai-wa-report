@@ -100,7 +100,36 @@ class SettingsDB:
                 logger.info("Default notification prompt initialized")
         except Exception as e:
             logger.error(f"Error initializing default notification setting: {e}")
-            
+        
+        # User Alert Setting
+        try:
+            c.execute("SELECT setting FROM notification_setting WHERE setting=?", ("allowed_alert_type",))
+            if c.fetchone() is None:
+                c.execute(
+                    "INSERT INTO notification_setting (setting, value) VALUES (?, ?)",
+                    (
+                        "allowed_alert_type",
+                        "notif_speed_alert;notif_geofence_inside;notif_geofence_outside;notif_cut_off;notif_sleep;notif_online;notif_offline"
+                    )
+                )
+                self._conn.commit()
+                logger.info("Default notification setting initialized")
+                
+            # Default prompt
+            c.execute("SELECT setting FROM notification_setting WHERE setting=?", ("prompt_default",))
+            if c.fetchone() is None:
+                c.execute(
+                    "INSERT INTO notification_setting (setting, value) VALUES (?, ?)",
+                    (
+                        "prompt_default",
+                        r"Notifikasi ORIN! Kendaraan anda ({device_name}) {message}"
+                    )
+                )
+                self._conn.commit()
+                logger.info("Default notification prompt initialized")
+        except Exception as e:
+            logger.error(f"Error initializing default notification setting: {e}")
+        
         ## Chat Filter Setting Default Value
         try:
             c.execute("SELECT setting FROM chat_filter_setting WHERE setting=?", ("chat_filter_instruction",))
@@ -205,7 +234,7 @@ Kriteria Output pada Key 'is_handover':
                 "INSERT INTO notification_setting (setting, value) VALUES (?, ?)",
                 (
                     setting,
-                    value
+                    value,
                 )
             )
             self._conn.commit()
@@ -252,51 +281,51 @@ Kriteria Output pada Key 'is_handover':
         self._conn.commit()
         return {"status": "success", "message": "Setting deleted"}
             
-    async def get_chat_filter_setting(self) -> tuple[Optional[str], Optional[str]]:
-        """
-        Returns a tuple of (instruction, questions).
-        """
-        cursor = self._conn.cursor()
-        # Fetch only the two specific settings we need
-        cursor.execute(
-            "SELECT setting, value FROM chat_filter_setting WHERE setting IN (?, ?)",
-            ("chat_filter_instruction", "chat_filter_questions")
-        )
+    # async def get_chat_filter_setting(self) -> tuple[Optional[str], Optional[str]]:
+    #     """
+    #     Returns a tuple of (instruction, questions).
+    #     """
+    #     cursor = self._conn.cursor()
+    #     # Fetch only the two specific settings we need
+    #     cursor.execute(
+    #         "SELECT setting, value FROM chat_filter_setting WHERE setting IN (?, ?)",
+    #         ("chat_filter_instruction", "chat_filter_questions")
+    #     )
         
-        # Create a lookup dict from the results
-        results = {row[0]: row[1] for row in cursor.fetchall()}
+    #     # Create a lookup dict from the results
+    #     results = {row[0]: row[1] for row in cursor.fetchall()}
         
-        # Return as a tuple in the specific order requested
-        return (
-            results.get("chat_filter_instruction"),
-            results.get("chat_filter_questions")
-        )
+    #     # Return as a tuple in the specific order requested
+    #     return (
+    #         results.get("chat_filter_instruction"),
+    #         results.get("chat_filter_questions")
+    #     )
         
-    async def update_chat_filter_setting(self, setting: str, data: Dict):
-        value = data.get('value')
-        if (
-            not setting
-        ):
-            raise RuntimeError("Key 'setting' is required in arg data")
+    # async def update_chat_filter_setting(self, setting: str, data: Dict):
+    #     value = data.get('value')
+    #     if (
+    #         not setting
+    #     ):
+    #         raise RuntimeError("Key 'setting' is required in arg data")
         
-        cursor = self._conn.cursor()
-        try:
-            cursor.execute(
-                "UPDATE chat_filter_setting SET value=? WHERE setting=?",
-                (
-                    value,
-                    setting,
-                )
-            )
-            if cursor.rowcount == 0:
-                raise ValueError("Setting not found")
-            self._conn.commit()
-            return {
-                "setting": setting,
-                "value": value,
-            }
-        except sqlite3.IntegrityError:
-            raise RuntimeError("Setting must be unique")
+    #     cursor = self._conn.cursor()
+    #     try:
+    #         cursor.execute(
+    #             "UPDATE chat_filter_setting SET value=? WHERE setting=?",
+    #             (
+    #                 value,
+    #                 setting,
+    #             )
+    #         )
+    #         if cursor.rowcount == 0:
+    #             raise ValueError("Setting not found")
+    #         self._conn.commit()
+    #         return {
+    #             "setting": setting,
+    #             "value": value,
+    #         }
+    #     except sqlite3.IntegrityError:
+    #         raise RuntimeError("Setting must be unique")
 
     async def close(self):
         """Closes the connection, forcing an immediate checkpoint."""
