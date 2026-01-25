@@ -18,10 +18,11 @@ from contextlib import asynccontextmanager
 
 from src.orin_wa_report.core.openwa import SocketClient, WAError
 
-# Import ChatDB for session management
+from src.orin_wa_report.core.config import get_config_data
 from src.orin_wa_report.core.agent.handler import ChatDB, DB_PATH
 from src.orin_wa_report.core.api.routers.client import router as client_router
 from src.orin_wa_report.core.api.routers.alert import router as alert_router
+from src.orin_wa_report.core.api.routers.dev import router as dev_router
 from src.orin_wa_report.core.api.utils import (
     periodic_dummy_notifications,
     periodic_send_notifications,
@@ -39,9 +40,7 @@ load_dotenv(override=True)
 
 ORINAI_CHAT_ENDPOINT = os.getenv("ORINAI_CHAT_ENDPOINT")
 
-# YAML Config
-with open('config.yaml', 'r') as file:
-    config_data: Dict = yaml.safe_load(file)
+config_data = get_config_data()
     
 # Initialization
 # SOCKET_URL = "http://localhost:8002"
@@ -253,48 +252,12 @@ async def send_file(req: SendFileRequest):
             content={"status": "error", "detail": str(e)},
             status_code=500,
         )
-    
-# Dummy Development
-@app.post(
-    path='/dummy/create_user',
-    include_in_schema=False,
-)
-async def create_dummy_user(request: Request):
-    try:
-        # Not allowed by config
-        if not config_data.get("dummy").get("enable_create_user"):
-            return JSONResponse(content={
-                "status": "not allowed",
-                "message": "Creating dummy user is not allowed from the server.",
-                "data": None
-            }, status_code=405)
-        
-        # Creating dummy user
-        data = await request.json()
-        
-        verified = data.get("verified", False)
-        dummy_devices_count = data.get("devices_count", 3)
-        
-        result = await create_user.create_dummy_user(
-            wa_verified=verified,
-            dummy_devices_count=dummy_devices_count
-        )
-        return JSONResponse(content={
-            "status": "success",
-            "message": "Dummy user created successfully!",
-            "data": result
-        }, status_code=200)
-    except Exception as e:
-        return JSONResponse(content={
-            "status": "error",
-            "message": f"Error when create dummy user: {str(e)}",
-            "data": None
-        }, status_code=500)
 
 # Frontend Demo
 # app.include_router(demo_router)
 app.include_router(alert_router)
 app.include_router(client_router)
+app.include_router(dev_router)
 
 # Notification settings
 # Setting Notification routes
