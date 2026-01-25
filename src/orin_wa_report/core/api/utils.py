@@ -155,6 +155,7 @@ LIMIT 1000;
                 
                 # old message: f"Notifikasi ORIN! Kendaraan anda ({row['device_name']}) {row['message']}"
                 # TODO: Alert type filter + Required is inside the sql query, not after fetching
+                # TODO: IMPLEMENT PERSONALIZED USER_ALERT
                 
                 # 1. Filter the rows we need to process
                 rows_to_process = [

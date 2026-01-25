@@ -1,22 +1,16 @@
 import os
 import asyncio
-import base64
-import sqlite3
-import random
 import logging
 from pydantic import BaseModel
-from typing import List, Dict, Optional
+from typing import List, Optional
 
-import httpx
-import yaml
-from fastapi import FastAPI, Request, HTTPException, Response, Header, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from contextlib import asynccontextmanager
+from fastapi.security import HTTPBearer
 
-from src.orin_wa_report.core.openwa import SocketClient, WAError
+from src.orin_wa_report.core.openwa import WAError
 
 from src.orin_wa_report.core.config import get_config_data
 from src.orin_wa_report.core.clients import get_openwa_client

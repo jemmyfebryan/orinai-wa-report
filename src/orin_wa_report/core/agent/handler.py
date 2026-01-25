@@ -1122,8 +1122,6 @@ async def chat_response(
             logger.warning(f"Chat: {last_message} is filtered from {phone_jid}, confidence: {chat_filter_confidence}")
             return
         
-        # TODO: SEND CONFIDENCE AND REPLY TO JEMMY
-        
         # Acquire lock to process this message
         async with entry.processing_lock:
             # Start typing indicator after 1 second

@@ -1,15 +1,13 @@
-import uuid
 import os
 import urllib.parse
 from pydantic import BaseModel
-from typing import List, Dict, Optional
+from typing import Dict
 
 import pandas as pd
 import httpx
 from fastapi import APIRouter, HTTPException, Depends, status
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from src.orin_wa_report.core.openwa import SocketClient
 from src.orin_wa_report.core.db import SettingsDB, get_settings_db
 from src.orin_wa_report.core.development.create_user import create_dummy_user
 from src.orin_wa_report.core.utils import (
@@ -28,6 +26,8 @@ load_dotenv(override=True)
 logger = get_logger(__name__, service="FastAPI")
 
 APP_STAGE = os.getenv("APP_STAGE")
+
+# TODO: IMPLEMENT "data" key on alert JSONResponse instead of raw keys
 
 # Implement fetch BOT Number from Socket Client, otherwise its default to environment
 # openwa_client = SocketClient('http://localhost:8085/', 'my_secret_api_key')
