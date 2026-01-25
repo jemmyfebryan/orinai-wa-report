@@ -29,6 +29,9 @@ class SettingsDB:
         self._init_done = False
         self._lock = asyncio.Lock()
         
+        # Hard-coded settings
+        self.required_alert_type = ["expired_license", "warning_expired_license"]
+        
     async def initialize(self):
         async with self._lock:
             if self._init_done:
@@ -59,6 +62,12 @@ class SettingsDB:
             CREATE TABLE IF NOT EXISTS notification_setting (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 setting TEXT NOT NULL UNIQUE,
+                value TEXT
+            );
+            
+            CREATE TABLE IF NOT EXISTS user_alert_setting (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE,
                 value TEXT
             );
             
@@ -102,33 +111,33 @@ class SettingsDB:
             logger.error(f"Error initializing default notification setting: {e}")
         
         # User Alert Setting
-        try:
-            c.execute("SELECT setting FROM notification_setting WHERE setting=?", ("allowed_alert_type",))
-            if c.fetchone() is None:
-                c.execute(
-                    "INSERT INTO notification_setting (setting, value) VALUES (?, ?)",
-                    (
-                        "allowed_alert_type",
-                        "notif_speed_alert;notif_geofence_inside;notif_geofence_outside;notif_cut_off;notif_sleep;notif_online;notif_offline"
-                    )
-                )
-                self._conn.commit()
-                logger.info("Default notification setting initialized")
+        # try:
+        #     c.execute("SELECT setting FROM user_alert_setting WHERE setting=?", ("allowed_alert_type",))
+        #     if c.fetchone() is None:
+        #         c.execute(
+        #             "INSERT INTO user_alert_setting (setting, value) VALUES (?, ?)",
+        #             (
+        #                 "allowed_alert_type",
+        #                 "notif_speed_alert;notif_geofence_inside;notif_geofence_outside;notif_cut_off;notif_sleep;notif_online;notif_offline"
+        #             )
+        #         )
+        #         self._conn.commit()
+        #         logger.info("Default notification setting initialized")
                 
-            # Default prompt
-            c.execute("SELECT setting FROM notification_setting WHERE setting=?", ("prompt_default",))
-            if c.fetchone() is None:
-                c.execute(
-                    "INSERT INTO notification_setting (setting, value) VALUES (?, ?)",
-                    (
-                        "prompt_default",
-                        r"Notifikasi ORIN! Kendaraan anda ({device_name}) {message}"
-                    )
-                )
-                self._conn.commit()
-                logger.info("Default notification prompt initialized")
-        except Exception as e:
-            logger.error(f"Error initializing default notification setting: {e}")
+        #     # Default prompt
+        #     c.execute("SELECT setting FROM user_alert_setting WHERE setting=?", ("prompt_default",))
+        #     if c.fetchone() is None:
+        #         c.execute(
+        #             "INSERT INTO user_alert_setting (setting, value) VALUES (?, ?)",
+        #             (
+        #                 "prompt_default",
+        #                 r"Notifikasi ORIN! Kendaraan anda ({device_name}) {message}"
+        #             )
+        #         )
+        #         self._conn.commit()
+        #         logger.info("Default notification prompt initialized")
+        # except Exception as e:
+        #     logger.error(f"Error initializing default notification setting: {e}")
         
         ## Chat Filter Setting Default Value
         try:
@@ -206,21 +215,62 @@ Kriteria Output pada Key 'is_handover':
                 logger.info("Default chat filter questions setting initialized")
         except Exception as e:
             logger.error(f"Error initializing default chat filter setting: {e}")
+    
+    def include_required_alert(self, allowed_alert_type: str) -> str:
+        allowed_alert_type_list = allowed_alert_type.split(sep=";")
+        
+        allowed_alert_type_list = list(
+            set(allowed_alert_type_list)
+            | set(self.required_alert_type)
+        )
             
-    async def get_notification_setting(self):
+        allowed_alert_type = ";".join(allowed_alert_type_list)
+        
+        return allowed_alert_type
+        
+    async def get_notification_setting(
+        self,
+        get_allowed_alert_type: bool = False,
+        include_required_alert_type: bool = True,
+    ) -> List[Dict] | Dict:
         cursor = self._conn.cursor()
-        cursor.execute("SELECT id, setting, value FROM notification_setting")
-        agents = [
-            {
+        
+        if get_allowed_alert_type:
+            query = "SELECT id, setting, value FROM notification_setting WHERE setting = 'allowed_alert_type'"
+            cursor.execute(query)
+            row: List[str] = cursor.fetchone()
+            
+            allowed_alert_type = row[2]
+            if include_required_alert_type:
+                allowed_alert_type = self.include_required_alert(
+                    allowed_alert_type=allowed_alert_type
+                )
+            
+            notification_setting = {
                 "id": row[0],
                 "setting": row[1],
-                "value": row[2],
+                "value": allowed_alert_type,
             }
-            for row in cursor.fetchall()
-        ]
-        return agents
+        else:
+            query = "SELECT id, setting, value FROM notification_setting"
+            cursor.execute(query)
+            notification_setting = []
+            for row in cursor.fetchall():
+                value = row[2]
+                if row[2] == "allowed_alert_type" and include_required_alert_type:
+                    value = self.include_required_alert(
+                        allowed_alert_type=value
+                    )
+                notification_setting.append(
+                    {
+                        "id": row[0],
+                        "setting": row[1],
+                        "value": value,
+                    }
+                )
+        return notification_setting
     
-    async def create_notification_setting(self, data):
+    async def create_notification_setting(self, data: Dict):
         setting = data.get('setting')
         value = data.get('value')
         if (
@@ -280,7 +330,47 @@ Kriteria Output pada Key 'is_handover':
             raise ValueError("Setting not found")
         self._conn.commit()
         return {"status": "success", "message": "Setting deleted"}
+    
+    async def get_user_alert_setting(
+        self,
+        user_id: int,
+        include_required_alert_type: bool = False,
+    ):
+        cursor = self._conn.cursor()
+        cursor.execute("SELECT id, user_id, value FROM user_alert_setting WHERE user_id = ?", (user_id,))
+        
+        alert_settings = cursor.fetchone()
+        
+        if alert_settings is None:
+            logger.info(f"(get_user_alert_setting) No setting for {user_id}, add the default.")
+            notification_setting = await self.get_notification_setting(
+                get_allowed_alert_type =True,
+                include_required_alert_type=False,
+            )
+            user_alert_setting = notification_setting.get("value")
             
+            cursor.execute(
+                "INSERT INTO user_alert_setting (user_id, value) VALUES (?, ?)",
+                (
+                    user_id,
+                    user_alert_setting,
+                )
+            )
+            self._conn.commit()
+            
+            if include_required_alert_type:
+                user_alert_setting = self.include_required_alert(
+                    allowed_alert_type=user_alert_setting
+                )
+        else:
+            user_alert_setting = alert_settings[2]
+        
+        return user_alert_setting
+    
+    async def put_user_alert_setting(self, user_id: str, value: str):
+        # TODO: update the user_alert_setting value for user_id to the value arg, do validation using allowed_alert_types
+        pass
+    
     # async def get_chat_filter_setting(self) -> tuple[Optional[str], Optional[str]]:
     #     """
     #     Returns a tuple of (instruction, questions).

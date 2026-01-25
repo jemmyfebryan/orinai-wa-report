@@ -10,9 +10,13 @@ from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from src.orin_wa_report.core.openwa import SocketClient
-
+from src.orin_wa_report.core.db import SettingsDB, get_settings_db
 from src.orin_wa_report.core.development.create_user import create_dummy_user
-from src.orin_wa_report.core.utils import get_db_query_endpoint
+from src.orin_wa_report.core.utils import (
+    get_db_query_endpoint,
+    get_user_id_from_api_token,
+    vps_db_base_url,
+)
 from src.orin_wa_report.core.logger import get_logger
 from src.orin_wa_report.core.development.verify_wa import (
     generate_and_store_wa_key
@@ -36,7 +40,7 @@ BOT_PHONE_NUMBER = os.getenv("BOT_PHONE_NUMBER", "")
 
 ORIN_DB_API_KEY = os.getenv("ORIN_DB_API_KEY", None)
 
-router = APIRouter(prefix="/alert", tags=["alert"])
+router = APIRouter(prefix="/alert", tags=["whatsapp-alert"])
 security = HTTPBearer()
 
 # Bearer Token Security
@@ -85,21 +89,27 @@ async def get_users_util(url: str) -> Dict:
     return response_sql
 
 # Routes
-@router.get("/users")
+@router.get(
+    path="/users",
+    include_in_schema=False,
+)
 async def get_users():
+    url = get_db_query_endpoint(name=APP_STAGE)
+    response_sql = await get_users_util(url=url)
+    return response_sql.get("rows")
+
+@router.post(
+    path="/users/create",
+    include_in_schema=False,
+)
+async def create_user(payload: CreateUser):
     # Forbidden for Production
     if APP_STAGE == "production":
         return JSONResponse(content={
             "status": "error",
             "message": "Creating user with is Forbidden on production stage!"
         }, status_code=403)
-    
-    url = get_db_query_endpoint(name=APP_STAGE)
-    response_sql = await get_users_util(url=url)
-    return response_sql.get("rows")
-
-@router.post("/users/create")
-async def create_user(payload: CreateUser):
+        
     mimic_user = payload.mimic_user or "None"
     
     url_stage = get_db_query_endpoint(name=APP_STAGE)
@@ -161,7 +171,10 @@ async def create_user(payload: CreateUser):
     }
     return {"ok": True, "user": new}
 
-@router.post("/users/{user_id}/delete")
+@router.post(
+    path="/users/{user_id}/delete",
+    include_in_schema=False,
+)
 async def delete_user(user_id: int):
     # Forbidden for Production
     if APP_STAGE == "production":
@@ -199,7 +212,10 @@ async def delete_user(user_id: int):
             "message": f"Error when deleting user: {str(e)}"
         }, status_code=500)
 
-@router.post("/users/verify")
+@router.post(
+    path="/users/verify",
+    include_in_schema=True,
+)
 async def verify_user(token: str = Depends(get_bearer_token)):
     try:
         url = get_db_query_endpoint(name=APP_STAGE)
@@ -259,7 +275,10 @@ async def verify_user(token: str = Depends(get_bearer_token)):
         }, status_code=500)
 
 # Get whether user verified or not
-@router.get("/users/verified")
+@router.get(
+    path="/users/verified",
+    include_in_schema=True,
+)
 async def get_verified_user(token: str = Depends(get_bearer_token)):
     try:
         url = get_db_query_endpoint(name=APP_STAGE)
@@ -304,7 +323,10 @@ async def get_verified_user(token: str = Depends(get_bearer_token)):
         }, status_code=500)
 
 # Unsubscribed
-@router.post("/users/unsubscribe")
+@router.post(
+    path="/users/unsubscribe",
+    include_in_schema=True,
+)
 async def unsubscribe_user(token: str = Depends(get_bearer_token)):
     try:
         url = get_db_query_endpoint(name=APP_STAGE)
@@ -351,7 +373,10 @@ async def unsubscribe_user(token: str = Depends(get_bearer_token)):
 class ToggleRequest(BaseModel):
     toggle: int  # 0 or 1
     
-@router.get("/users/toggle_notif")
+@router.get(
+    path="/users/toggle_notif",
+    include_in_schema=True,
+)
 async def get_toggle_notif(token: str = Depends(get_bearer_token)):
     try:
         url = get_db_query_endpoint(name=APP_STAGE)
@@ -395,8 +420,11 @@ async def get_toggle_notif(token: str = Depends(get_bearer_token)):
             "toggle": None
         }, status_code=500)
         
-@router.post("/users/toggle_notif")
-async def set_toggle_notif(payload: ToggleRequest, token: str = Depends(get_bearer_token)):
+@router.put(
+    path="/users/toggle_notif",
+    include_in_schema=True,
+)
+async def put_toggle_notif(payload: ToggleRequest, token: str = Depends(get_bearer_token)):
     try:
         url = get_db_query_endpoint(name=APP_STAGE)
         
@@ -432,3 +460,61 @@ async def set_toggle_notif(payload: ToggleRequest, token: str = Depends(get_bear
             "message": f"Error when toggle notif: {str(e)}",
             "toggle": None
         }, status_code=500)
+
+
+# User Alert Settings
+@router.get(
+    path='/users/settings',
+    include_in_schema=True,
+)
+async def get_user_alert_setting(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    settings_db: SettingsDB = Depends(get_settings_db),
+):
+    api_token = credentials.credentials
+    
+    try:
+        user_id = await get_user_id_from_api_token(
+            db_base_url=vps_db_base_url,
+            api_token=api_token,
+            derive_parent_id=False,
+        )
+        
+        user_alert_setting = await settings_db.get_user_alert_setting(
+            user_id=user_id,
+            include_required_alert_type=False,
+        )
+        
+        user_alert_setting_list = user_alert_setting.split(sep=";")
+        
+        allowed_alert_type = await settings_db.get_notification_setting(
+            get_allowed_alert_type=True, include_required_alert_type=False,
+        )
+        
+        data_result = {}
+        for alert_type in allowed_alert_type.get("value").split(sep=";"):
+            if alert_type in user_alert_setting_list:
+                data_result[alert_type] = True
+            else:
+                data_result[alert_type] = False
+        
+        return JSONResponse(content={
+            "status": "success",
+            "message": f"User alert fetched successfully",
+            "data": data_result,
+        }, status_code=500)
+    except Exception as e:
+        return JSONResponse(content={
+            "status": "error",
+            "message": f"Global Error: {str(e)}",
+            "data": None,
+        }, status_code=500)
+
+@router.put(
+    path='/users/settings',
+    include_in_schema=True,
+)
+async def put_user_alert_setting(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    pass

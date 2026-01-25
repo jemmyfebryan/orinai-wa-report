@@ -9,17 +9,18 @@ from typing import List, Dict, Optional
 
 import httpx
 import yaml
-from fastapi import FastAPI, Request, HTTPException, Header, Response
+from fastapi import FastAPI, Request, HTTPException, Response, Header, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
 
 from src.orin_wa_report.core.openwa import SocketClient, WAError
 
 # Import ChatDB for session management
 from src.orin_wa_report.core.agent.handler import ChatDB, DB_PATH
-from src.orin_wa_report.core.api.routers.demo import router as demo_router
+from src.orin_wa_report.core.api.routers.client import router as client_router
 from src.orin_wa_report.core.api.routers.alert import router as alert_router
 from src.orin_wa_report.core.api.utils import (
     periodic_dummy_notifications,
@@ -44,6 +45,9 @@ with open('config.yaml', 'r') as file:
     
 # Initialization
 # SOCKET_URL = "http://localhost:8002"
+
+# Bearer Token Security
+security = HTTPBearer()
 
 # Logger
 logger = get_logger(__name__, service="FastAPI")
@@ -110,35 +114,13 @@ from fastapi.staticfiles import StaticFiles
 app.mount("/static", StaticFiles(directory="src/orin_wa_report/web/static"), name="static")
 
 # Endpoints
-@app.get("/", response_class=HTMLResponse)
+@app.get(
+    path="/",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
-
-# OpenWA Proxy
-OPEN_WA_PROXY_PORT = os.getenv("OPEN_WA_PROXY_PORT", "8002")  # default port if env var not set
-BASE_URL = f"http://172.17.0.1:{OPEN_WA_PROXY_PORT}"
-async def proxy_get(path: str):
-    url = f"{BASE_URL}/{path}"
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(url)
-        return Response(content=resp.content, status_code=resp.status_code, media_type=resp.headers.get("content-type"))
-
-@app.get("/whatsapp/status")
-async def get_status():
-    return await proxy_get("status")
-
-@app.get("/whatsapp/qr")
-async def get_qr():
-    return await proxy_get("qr")
-
-@app.get("/whatsapp/qr.png")
-async def get_qr_png():
-    return await proxy_get("qr.png")
-
-@app.get("/whatsapp/qr/raw")
-async def get_qr_raw():
-    return await proxy_get("qr/raw")
-
 
 # OpenWA Client
 OPEN_WA_PORT = os.getenv("OPEN_WA_PORT")
@@ -166,7 +148,10 @@ class MessageRequest(BaseModel):
     to_fallback: Optional[str] = None
     message: str  # message text
 
-@app.post("/send-message")
+@app.post(
+    path="/send-message",
+    include_in_schema=False,
+)
 async def send_message(req: MessageRequest):
     if openwa_client is None:
         raise HTTPException(status_code=503, detail="WhatsApp client not ready")
@@ -209,7 +194,10 @@ class BulkMessageRequest(BaseModel):
     delay_seconds: Optional[float] = 0  # optional delay between messages (default: 0)
 
 # --- API Endpoint ---
-@app.post("/send-messages")
+@app.post(
+    path="/send-messages",
+    include_in_schema=False,
+)
 async def send_messages(req: BulkMessageRequest):
     if openwa_client is None:
         raise HTTPException(status_code=503, detail="WhatsApp client not ready")
@@ -226,7 +214,10 @@ class SendFileRequest(BaseModel):
     filename: str
     caption: str
     
-@app.post("/send-file")
+@app.post(
+    path="/send-file",
+    include_in_schema=False,
+)
 async def send_file(req: SendFileRequest):
     if openwa_client is None:
         raise HTTPException(status_code=503, detail="WhatsApp client not ready")
@@ -264,7 +255,10 @@ async def send_file(req: SendFileRequest):
         )
     
 # Dummy Development
-@app.post('/dummy/create_user')
+@app.post(
+    path='/dummy/create_user',
+    include_in_schema=False,
+)
 async def create_dummy_user(request: Request):
     try:
         # Not allowed by config
@@ -298,19 +292,30 @@ async def create_dummy_user(request: Request):
         }, status_code=500)
 
 # Frontend Demo
-app.include_router(demo_router)
+# app.include_router(demo_router)
 app.include_router(alert_router)
+app.include_router(client_router)
 
 # Notification settings
 # Setting Notification routes
-@app.get('/notification_setting')
+@app.get(
+    path='/notification_setting',
+    include_in_schema=False,
+)
 async def get_notification_setting():
     agents = await settings_db.get_notification_setting()
     return JSONResponse(content=agents)
 
-@app.post('/notification_setting')
+@app.post(
+    path='/notification_setting',
+    include_in_schema=False,
+)
 async def create_notification_setting(request: Request):
-    data = await request.json()
+    data: Dict[str, str] = await request.json()
+    
+    if data.get("setting") == "allowed_alert_type":
+        raise HTTPException(status_code=400, detail="Creating allowed_alert_type setting is prohibited")
+
     try:
         content = await settings_db.create_notification_setting(data=data)
         return JSONResponse(
@@ -320,9 +325,22 @@ async def create_notification_setting(request: Request):
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=400, detail="Setting must be unique")
 
-@app.put('/notification_setting/{setting}')
+@app.put(
+    path='/notification_setting/{setting}',
+    include_in_schema=False,
+)
 async def update_notification_setting(setting: str, request: Request):
-    data = await request.json()
+    data: Dict[str, str] = await request.json()
+    
+    # Value validation for allowed_alert_type
+    if data.get("setting") == "allowed_alert_type":
+        try:
+            value = data.get("value")
+            value_split = value.split(sep=";")
+            assert isinstance(value_split, list)
+        except:
+            raise HTTPException(status_code=400, detail="allowed_alert_type must be a string separated by ';'")
+    
     try:
         content = await settings_db.update_notification_setting(
             setting=setting,
@@ -334,8 +352,14 @@ async def update_notification_setting(setting: str, request: Request):
     except sqlite3.IntegrityError:
         raise HTTPException(status_code=400, detail="Setting must be unique")
     
-@app.delete('/notification_setting/{setting}')
+@app.delete(
+    path='/notification_setting/{setting}',
+    include_in_schema=False,
+)
 async def delete_notification_setting(setting: str):
+    if setting == "allowed_alert_type":
+        raise HTTPException(status_code=400, detail="Deleting allowed_alert_type setting is prohibited")
+
     try:
         content = await settings_db.delete_notification_setting(
             setting=setting
@@ -349,7 +373,10 @@ class ApplySettings(BaseModel):
     enable_create_dummy_alert: bool
     enable_send_alert: bool
 
-@app.get("/settings")
+@app.get(
+    path="/settings",
+    include_in_schema=False,
+)
 def get_settings():
     # logger.info(f"Get Setting, config_data: {config_data}")
     enable_create_dummy_alert = config_data.get("dummy").get("enable_create_alert", False)
@@ -362,7 +389,10 @@ def get_settings():
     
     return settings
 
-@app.post("/settings")
+@app.post(
+    path="/settings",
+    include_in_schema=False,
+)
 def apply_settings(payload: ApplySettings):
     config_data["dummy"]["enable_create_alert"] = payload.enable_create_dummy_alert
     config_data["fastapi"]["enable_send_alert"] = payload.enable_send_alert
@@ -375,7 +405,10 @@ def apply_settings(payload: ApplySettings):
     return {"ok": True, "settings": settings}
 
 # New routes for chat history and sessions
-@app.get("/whatsapp/chat_history/{phone_number}")
+@app.get(
+    path="/whatsapp/chat_history/{phone_number}",
+    include_in_schema=False,
+)
 async def get_chat_history(phone_number: str):
     """
     Fetch ALL chat history for a phone number across all sessions
@@ -409,7 +442,10 @@ async def get_chat_history(phone_number: str):
     
     return openai_messages
 
-@app.get("/whatsapp/phone_to_lid/{phone_number}")
+@app.get(
+    path="/whatsapp/phone_to_lid/{phone_number}",
+    include_in_schema=False,
+)
 async def get_phone_to_lid(phone_number: str):
     """
     Fetch ALL chat history for a phone number across all sessions
@@ -432,7 +468,10 @@ async def get_phone_to_lid(phone_number: str):
             "lid_number": None
         }, status_code=500)
 
-@app.get("/whatsapp/contacts")
+@app.get(
+    path="/whatsapp/contacts",
+    include_in_schema=False,
+)
 async def get_contacts():
     """
     Fetch all phone numbers that have chat history
@@ -447,7 +486,10 @@ async def get_contacts():
     phones = await chat_db._run(_get_phones)
     return [{"phone_number": phone} for phone in phones]
 
-@app.get("/whatsapp/sessions/{phone_number}")
+@app.get(
+    path="/whatsapp/sessions/{phone_number}",
+    include_in_schema=False,
+)
 async def get_sessions(phone_number: str):
     """
     Fetch all session IDs for a phone number
@@ -465,7 +507,10 @@ async def get_sessions(phone_number: str):
     session_ids = await chat_db._run(_get_sessions)
     return session_ids
 
-@app.get("/whatsapp/chat_history_by_session/{session_id}")
+@app.get(
+    path="/whatsapp/chat_history_by_session/{session_id}",
+    include_in_schema=False,
+)
 async def get_chat_history_by_session(session_id: str):
     """
     Fetch chat history by session ID in OpenAI format with timestamps
@@ -490,7 +535,10 @@ async def get_chat_history_by_session(session_id: str):
     return openai_messages
 
 
-@app.get("/whatsapp/profile/{phone_number}")
+@app.get(
+    path="/whatsapp/profile/{phone_number}",
+    include_in_schema=False,
+)
 async def get_profile(phone_number: str):
     """
     Fetch ALL chat history for a phone number across all sessions
@@ -533,7 +581,10 @@ async def get_profile(phone_number: str):
         "description": description
     }
     
-@app.post("/whatsapp/dummy_notification")
+@app.post(
+    path="/whatsapp/dummy_notification",
+    include_in_schema=False,
+)
 async def wa_dummy_notification(request: Request):
     data = await request.json()
     number_type = data.get("number_type")
@@ -569,7 +620,10 @@ async def wa_dummy_notification(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-@app.get("/whatsapp/disable_agent/{phone_number}")
+@app.get(
+    path="/whatsapp/disable_agent/{phone_number}",
+    include_in_schema=False,
+)
 async def get_disable_agent(phone_number: str):
     disable_agent = await chat_db.get_config(
         phone=phone_number,
@@ -589,7 +643,10 @@ class DisableAgentUpdate(BaseModel):
     phone_number: str
     disable_agent: bool
     
-@app.put("/whatsapp/disable_agent")
+@app.put(
+    path="/whatsapp/disable_agent",
+    include_in_schema=False,
+)
 async def update_disable_agent(data: DisableAgentUpdate):
     """
     Updates the 'disable_agent' configuration value for a specific phone number.

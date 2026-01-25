@@ -240,7 +240,7 @@
             const desiredToggle = notifState ? 0 : 1;
 
             const r = await fetch(API_BASE + `/alert/users/toggle_notif`, {
-              method: 'POST',
+              method: 'PUT',
               headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${u.api_token}`

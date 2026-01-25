@@ -154,6 +154,7 @@ LIMIT 1000;
                 logger.info(f"Get alert_last_id: {alert_last_id}")
                 
                 # old message: f"Notifikasi ORIN! Kendaraan anda ({row['device_name']}) {row['message']}"
+                # TODO: Alert type filter + Required is inside the sql query, not after fetching
                 
                 # 1. Filter the rows we need to process
                 rows_to_process = [
