@@ -6,7 +6,8 @@ import os
 from typing import Dict
 from src.orin_wa_report.core.openwa import SocketClient
 from src.orin_wa_report.core.agent.main import run_bot
-from src.orin_wa_report.core.api.app import app, set_openwa_client
+from src.orin_wa_report.core.api.app import app
+from src.orin_wa_report.core.clients import init_openwa, get_openwa_client
 
 from dotenv import load_dotenv
 load_dotenv(override=True)
@@ -15,17 +16,12 @@ OPEN_WA_PORT = os.getenv("OPEN_WA_PORT")
 
 with open('config.yaml', 'r') as file:
     config_data: Dict = yaml.safe_load(file)
-
-def init_openwa():
-    return SocketClient(
-        f"http://172.17.0.1:{OPEN_WA_PORT}/",
-        api_key="my_secret_api_key",
-    )
     
 async def main():
-    openwa_client = await asyncio.to_thread(init_openwa)
+    await asyncio.to_thread(init_openwa)
+    openwa_client = get_openwa_client()
     
-    set_openwa_client(openwa_client)
+    print(openwa_client)
     
     if config_data.get("services").get("enable_agent"):
         bot_task = asyncio.create_task(run_bot(openwa_client))

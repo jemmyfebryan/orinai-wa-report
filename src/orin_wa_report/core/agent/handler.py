@@ -752,6 +752,10 @@ async def _ensure_db_and_manager():
             _DB = ChatDB(DB_PATH)
             await _DB.initialize()
             _SESSION_MANAGER = SessionManager(_DB)
+            
+async def get_chat_db() -> ChatDB:
+    await _ensure_db_and_manager()
+    return _DB
 
 # -----------------------------
 # Chat response logic
