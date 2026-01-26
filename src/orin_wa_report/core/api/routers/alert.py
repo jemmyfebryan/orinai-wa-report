@@ -222,7 +222,11 @@ async def delete_user(user_id: int):
             })
             response_sql: Dict = response.json()
         
-        return {"ok": True, "status": "success", "message": response_sql}
+        return JSONResponse(content={
+            "ok": True,
+            "status": "success",
+            "message": response_sql
+        }, status_code=200)
     except Exception as e:
         return JSONResponse(content={
             "ok": False,
@@ -274,7 +278,7 @@ async def verify_user(token: str = Depends(get_bearer_token)):
         encoded_wa_message = urllib.parse.quote(wa_message)
         
         wa_url = f'https://wa.me/{BOT_PHONE_NUMBER}?text={encoded_wa_message}'
-        return {
+        return JSONResponse(content={
             "ok": True,
             "status": "success",
             "message": f"Successfully generating wa_url",
@@ -283,7 +287,7 @@ async def verify_user(token: str = Depends(get_bearer_token)):
                 "bot_number": BOT_PHONE_NUMBER,
                 "wa_url": wa_url,
             }
-        }
+        }, status_code=200)
     except Exception as e:
         return JSONResponse(content={
             "ok": False,
@@ -328,14 +332,14 @@ async def get_user_verification(token: str = Depends(get_bearer_token)):
         
         logger.info(f"User token {token} GET wa_verified: {wa_verified}: {response_sql}")
         
-        return {
+        return JSONResponse(content={
             "ok": True,
             "status": "success",
             "message": "Verification fetched successfully",
             "data": {
                 "is_wa_verified": wa_verified,
             }
-        }
+        }, status_code=200)
     except Exception as e:
         return JSONResponse(content={
             "ok": False,
@@ -383,11 +387,11 @@ async def unsubscribe_user(token: str = Depends(get_bearer_token)):
         response_sql = response.json()
         
         logger.info(f"User token {token} unsubscribed: {response_sql}")
-        return {
+        return JSONResponse(content={
             "ok": True,
             "status": "success",
             "message": "Successfully unsubscribe user."
-        }
+        }, status_code=200)
     except Exception as e:
         return JSONResponse(content={
             "ok": False,
@@ -395,7 +399,7 @@ async def unsubscribe_user(token: str = Depends(get_bearer_token)):
             "message": f"Error when unsubscribe user {str(e)}",
         }, status_code=500)
 
-# Toggle Notification    
+# Toggle Notification
 @router.get(
     path="/users/toggle_notification",
     response_model=GetToggleNotificationResponse,
@@ -432,14 +436,14 @@ async def get_toggle_notification(token: str = Depends(get_bearer_token)):
         
         logger.info(f"User token {token} GET wa_notif: {wa_notif}: {response_sql}")
         
-        return {
+        return JSONResponse(content={
             "ok": True,
             "status": "success",
             "message": "Notification fetched successfully",
             "data": {
                 "is_toggle_on": wa_notif_bool,
             }
-        }
+        }, status_code=200)
     except Exception as e:
         return JSONResponse(content={
             "ok": False,
@@ -481,14 +485,14 @@ async def put_toggle_notification(
         
         logger.info(f"Toggled for api_token: {token} to {desired_toggle}: {response_sql}")
         
-        return {
+        return JSONResponse(content={
             "ok": True,
             "status": "success",
             "message": "Notification toggled successfully",
             "data": {
                 "toggle": desired_toggle_bool,
             }
-        }
+        }, status_code=200)
     except Exception as e:
         return JSONResponse(content={
             "ok": False,
@@ -541,7 +545,7 @@ async def get_user_alert_settings(
             "status": "success",
             "message": f"User alert settings fetched successfully",
             "data": data_result,
-        }, status_code=500)
+        }, status_code=200)
     except Exception as e:
         return JSONResponse(content={
             "ok": False,
@@ -558,6 +562,45 @@ async def get_user_alert_settings(
 )
 async def put_user_alert_setting(
     request: PutUserAlertSettingsRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    settings_db: SettingsDB = Depends(get_settings_db),
 ):
-    pass
+    api_token = credentials.credentials
+    request_dict: Dict = request.model_dump()
+    
+    try:
+        user_id = await get_user_id_from_api_token(
+            db_base_url=vps_db_base_url,
+            api_token=api_token,
+            derive_parent_id=False,
+        )
+        
+        updated_alert_type = await settings_db.put_user_alert_setting(
+            user_id=user_id,
+            value=request_dict
+        )
+        
+        allowed_alert_type = await settings_db.get_notification_setting(
+            get_allowed_alert_type=True, include_required_alert_type=False,
+        )
+        
+        data_result = {}
+        for alert_type in allowed_alert_type.get("value").split(sep=";"):
+            if alert_type in updated_alert_type:
+                data_result[alert_type] = True
+            else:
+                data_result[alert_type] = False
+        
+        return JSONResponse(content={
+            "ok": True,
+            "status": "success",
+            "message": f"User alert settings updated successfully",
+            "data": data_result,
+        }, status_code=200)
+    except Exception as e:
+        return JSONResponse(content={
+            "ok": False,
+            "status": "error",
+            "message": f"Error when updating user alert settings: {str(e)}",
+            "data": None,
+        }, status_code=500)

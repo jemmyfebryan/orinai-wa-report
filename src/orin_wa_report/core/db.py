@@ -232,7 +232,7 @@ Kriteria Output pada Key 'is_handover':
         self,
         get_allowed_alert_type: bool = False,
         include_required_alert_type: bool = True,
-    ) -> List[Dict] | Dict:
+    ) -> List[Dict[str, str]] | Dict[str, str]:
         cursor = self._conn.cursor()
         
         if get_allowed_alert_type:
@@ -335,7 +335,7 @@ Kriteria Output pada Key 'is_handover':
         self,
         user_id: int,
         include_required_alert_type: bool = False,
-    ):
+    ) -> str:
         cursor = self._conn.cursor()
         cursor.execute("SELECT id, user_id, value FROM user_alert_setting WHERE user_id = ?", (user_id,))
         
@@ -367,9 +367,53 @@ Kriteria Output pada Key 'is_handover':
         
         return user_alert_setting
     
-    async def put_user_alert_setting(self, user_id: str, value: str):
-        # TODO: update the user_alert_setting value for user_id to the value arg, do validation using allowed_alert_types
-        pass
+    async def put_user_alert_setting(self, user_id: str, value: str | Dict) -> None:
+        """
+        Update User Alert Setting for the user_id
+        value can either be str for direct update with no filtering
+        or Dict that could dynamically set the value
+        
+        :param user_id: ID of user that the alert settings need to be updated
+        :type user_id: str
+        :param value: Either str or Dict of updated alert settings value
+        :type value: str | Dict
+        """
+        cursor = self._conn.cursor()
+        
+        if isinstance(value, str):
+            updated_alert_type = value
+        else:
+            # TODO: update the user_alert_setting value for user_id to the value arg, do validation using allowed_alert_types
+            allowed_alert_type = await self.get_notification_setting(
+                get_allowed_alert_type=True,
+                include_required_alert_type=False,
+            )
+            allowed_alert_type_list = allowed_alert_type.get("value").split(sep=";")
+            
+            current_alert_type = await self.get_user_alert_setting(
+                user_id=user_id,
+                include_required_alert_type=False,
+            )
+            current_alert_type_set = set(current_alert_type.split(sep=";"))
+            
+            for key, value in value.items():
+                if value == True and value in allowed_alert_type_list:
+                    current_alert_type_set.add(key)
+                else:
+                    current_alert_type_set.discard(key)
+                    
+            updated_alert_type = ";".join(current_alert_type_set)
+        
+        cursor.execute(
+            "UPDATE user_alert_setting SET value=? WHERE user_id=?",
+            (
+                updated_alert_type,
+                user_id,
+            )
+        )
+        self._conn.commit()
+        
+        return updated_alert_type
     
     # async def get_chat_filter_setting(self) -> tuple[Optional[str], Optional[str]]:
     #     """
