@@ -213,9 +213,9 @@
           });
           const j = await r.json()
           if (!j.ok) { alert('Error getting key'); return }
-          const key = j.key
+          const key = j.data.key
           // open wa link in new tab
-          const waUrl = j.wa_url
+          const waUrl = j.data.wa_url
           window.open(waUrl, '_blank')
           document.getElementById('waResult').innerText = 'Opened WhatsApp link. Waiting for verification...'
         })
@@ -224,12 +224,12 @@
         // fetch current toggle state from server
         let notifState = false
         try {
-          const r = await fetch(API_BASE + `/alert/users/toggle_notif`, {
+          const r = await fetch(API_BASE + `/alert/users/toggle_notification`, {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${u.api_token}` }
           })
           const j = await r.json()
-          notifState = !!j.toggle  // assuming API returns { toggle: 0|1 }
+          notifState = !!j.is_toggle_on  // assuming API returns { toggle: False|True }
         } catch (e) { console.warn('Failed to fetch toggle', e) }
 
         const toggle = document.createElement('button')
@@ -237,9 +237,9 @@
         toggle.addEventListener('click', async () => {
           try {
             // determine the desired new state
-            const desiredToggle = notifState ? 0 : 1;
+            const desiredToggle = notifState ? false : true;
 
-            const r = await fetch(API_BASE + `/alert/users/toggle_notif`, {
+            const r = await fetch(API_BASE + `/alert/users/toggle_notification`, {
               method: 'PUT',
               headers: {
                 'Content-Type': 'application/json',
@@ -249,7 +249,7 @@
             });
 
             const j = await r.json()
-            notifState = !!j.toggle
+            notifState = !!j.is_toggle_on
             toggle.innerText = notifState ? 'Disable Notifications' : 'Enable Notifications'
           } catch (e) { alert('Failed to toggle notifications') }
         })

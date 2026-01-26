@@ -16,36 +16,30 @@ OPEN_WA_PORT = os.getenv("OPEN_WA_PORT")
 
 with open('config.yaml', 'r') as file:
     config_data: Dict = yaml.safe_load(file)
-    
-async def main():
-    await asyncio.to_thread(init_openwa)
-    openwa_client = get_openwa_client()
-    
-    print(openwa_client)
-    
-    if config_data.get("services").get("enable_agent"):
-        bot_task = asyncio.create_task(run_bot(openwa_client))
-    
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000, reload=False)
-    api_task = asyncio.create_task(uvicorn.Server(config).serve())
-    
-    await asyncio.gather(bot_task, api_task)
-    
-    # service_tasks = []
-    
-    # # Start FastAPI server
-    # config = uvicorn.Config(app, host="0.0.0.0", port=8000, reload=True)
-    # server = uvicorn.Server(config)
-    # api_task = asyncio.create_task(server.serve())
-    # service_tasks.append(api_task)
-    
-    # # Start bot in background
-    # if config_data.get("services").get("enable_agent"):
-    #     bot_task = asyncio.create_task(run_bot())
-    #     service_tasks.append(bot_task)
 
-    # # Wait for both
-    # await asyncio.gather(*service_tasks)
+async def main():
+    # 1. Setup the API Task
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000, reload=False)
+    server = uvicorn.Server(config)
+    api_task = asyncio.create_task(server.serve())
+
+    # 2. Define the background worker for OpenWA
+    async def openwa_worker():
+        print("⏳ Connecting to OpenWA in background...")
+        # If init_openwa is 'async def', await it directly. 
+        # If it's a regular 'def', use await asyncio.to_thread(init_openwa)
+        await init_openwa() 
+        
+        client = get_openwa_client()
+        if client and config_data.get("services").get("enable_agent"):
+            print("🚀 OpenWA Connected. Starting Bot...")
+            await run_bot(client)
+
+    # 3. Fire the worker task - this is NON-BLOCKING
+    asyncio.create_task(openwa_worker())
+
+    # 4. Keep the main loop alive with the API task
+    await api_task
 
 if __name__ == "__main__":
     asyncio.run(main())

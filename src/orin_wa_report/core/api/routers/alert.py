@@ -19,6 +19,24 @@ from src.orin_wa_report.core.logger import get_logger
 from src.orin_wa_report.core.development.verify_wa import (
     generate_and_store_wa_key
 )
+from src.orin_wa_report.core.models import (
+    VerifyUserResponse,
+    verify_user_response_500,
+    GetUserVerificationResponse,
+    get_user_verification_response_500,
+    UnsubscribeUserResponse,
+    unsubscribe_user_response_500,
+    GetToggleNotificationResponse,
+    get_toggle_notification_response_500,
+    PutToggleNotificationRequest,
+    PutToggleNotificationResponse,
+    put_toggle_notification_response_500,
+    GetUserAlertSettingsResponse,
+    get_user_alert_settings_response_500,
+    PutUserAlertSettingsRequest,
+    PutUserAlertSettingsResponse,
+    put_user_alert_settings_response_500,
+)
 
 from dotenv import load_dotenv
 load_dotenv(override=True)
@@ -214,6 +232,8 @@ async def delete_user(user_id: int):
 
 @router.post(
     path="/users/verify",
+    response_model=VerifyUserResponse,
+    responses={500: verify_user_response_500},
     include_in_schema=True,
 )
 async def verify_user(token: str = Depends(get_bearer_token)):
@@ -240,9 +260,7 @@ async def verify_user(token: str = Depends(get_bearer_token)):
                 "ok": False,
                 "status": "error",
                 "message": "User not found",
-                "key": None,
-                "bot_number": None,
-                "wa_url": None
+                "data": None
             }, status_code=404)
         
         user = response_sql.get("rows")[0]
@@ -259,27 +277,29 @@ async def verify_user(token: str = Depends(get_bearer_token)):
         return {
             "ok": True,
             "status": "success",
-            "message": f"Successfully send wa_key and wa_url",
-            "key": wa_key,
-            "bot_number": BOT_PHONE_NUMBER,
-            "wa_url": wa_url
+            "message": f"Successfully generating wa_url",
+            "data": {
+                "key": wa_key,
+                "bot_number": BOT_PHONE_NUMBER,
+                "wa_url": wa_url,
+            }
         }
     except Exception as e:
         return JSONResponse(content={
             "ok": False,
             "status": "error",
             "message": f"Error when verifying user: {str(e)}",
-            "key": None,
-            "bot_number": None,
-            "wa_url": None
+            "data": None
         }, status_code=500)
 
 # Get whether user verified or not
 @router.get(
-    path="/users/verified",
+    path="/users/verify",
+    response_model=GetUserVerificationResponse,
+    responses={500: get_user_verification_response_500},
     include_in_schema=True,
 )
-async def get_verified_user(token: str = Depends(get_bearer_token)):
+async def get_user_verification(token: str = Depends(get_bearer_token)):
     try:
         url = get_db_query_endpoint(name=APP_STAGE)
         
@@ -301,7 +321,7 @@ async def get_verified_user(token: str = Depends(get_bearer_token)):
                 "ok": False,
                 "status": "error",
                 "message": f"Data not found",
-                "wa_verified": None
+                "data": None
             }, status_code=404)
         
         wa_verified = response_sql.get("rows")[0].get("wa_verified")
@@ -311,20 +331,26 @@ async def get_verified_user(token: str = Depends(get_bearer_token)):
         return {
             "ok": True,
             "status": "success",
-            "message": "Notification fetched successfully",
-            "wa_verified": wa_verified
+            "message": "Verification fetched successfully",
+            "data": {
+                "is_wa_verified": wa_verified,
+            }
         }
     except Exception as e:
         return JSONResponse(content={
             "ok": False,
             "status": "error",
-            "message": f"Error when fetch toggle: {str(e)}",
-            "wa_verified": None
+            "message": f"Error when fetch verified user: {str(e)}",
+            "data": {
+                "is_wa_verified": None,
+            }
         }, status_code=500)
 
 # Unsubscribed
 @router.post(
     path="/users/unsubscribe",
+    response_model=UnsubscribeUserResponse,
+    responses={500: unsubscribe_user_response_500},
     include_in_schema=True,
 )
 async def unsubscribe_user(token: str = Depends(get_bearer_token)):
@@ -369,15 +395,14 @@ async def unsubscribe_user(token: str = Depends(get_bearer_token)):
             "message": f"Error when unsubscribe user {str(e)}",
         }, status_code=500)
 
-# Toggle Notification
-class ToggleRequest(BaseModel):
-    toggle: int  # 0 or 1
-    
+# Toggle Notification    
 @router.get(
-    path="/users/toggle_notif",
+    path="/users/toggle_notification",
+    response_model=GetToggleNotificationResponse,
+    responses={500: get_toggle_notification_response_500},
     include_in_schema=True,
 )
-async def get_toggle_notif(token: str = Depends(get_bearer_token)):
+async def get_toggle_notification(token: str = Depends(get_bearer_token)):
     try:
         url = get_db_query_endpoint(name=APP_STAGE)
         
@@ -399,10 +424,11 @@ async def get_toggle_notif(token: str = Depends(get_bearer_token)):
                 "ok": False,
                 "status": "error",
                 "message": f"Data not found",
-                "wa_verified": None
+                "data": None
             }, status_code=404)
         
         wa_notif = response_sql.get("rows")[0].get("wa_notif")
+        wa_notif_bool = bool(wa_notif)
         
         logger.info(f"User token {token} GET wa_notif: {wa_notif}: {response_sql}")
         
@@ -410,25 +436,33 @@ async def get_toggle_notif(token: str = Depends(get_bearer_token)):
             "ok": True,
             "status": "success",
             "message": "Notification fetched successfully",
-            "toggle": wa_notif
+            "data": {
+                "is_toggle_on": wa_notif_bool,
+            }
         }
     except Exception as e:
         return JSONResponse(content={
             "ok": False,
             "status": "error",
             "message": f"Error when fetch toggle: {str(e)}",
-            "toggle": None
+            "data": None
         }, status_code=500)
         
 @router.put(
-    path="/users/toggle_notif",
+    path="/users/toggle_notification",
+    response_model=PutToggleNotificationResponse,
+    responses={500: put_toggle_notification_response_500},
     include_in_schema=True,
 )
-async def put_toggle_notif(payload: ToggleRequest, token: str = Depends(get_bearer_token)):
+async def put_toggle_notification(
+    payload: PutToggleNotificationRequest,
+    token: str = Depends(get_bearer_token)
+):
     try:
         url = get_db_query_endpoint(name=APP_STAGE)
         
-        desired_toggle = payload.toggle
+        desired_toggle_bool = payload.is_toggle_on
+        desired_toggle = int(desired_toggle_bool)
         
         query = "UPDATE users SET wa_notif = :desired_toggle WHERE api_token = :api_token AND deleted_at IS NULL; COMMIT;"
         
@@ -451,23 +485,27 @@ async def put_toggle_notif(payload: ToggleRequest, token: str = Depends(get_bear
             "ok": True,
             "status": "success",
             "message": "Notification toggled successfully",
-            "toggle": desired_toggle
+            "data": {
+                "toggle": desired_toggle_bool,
+            }
         }
     except Exception as e:
         return JSONResponse(content={
             "ok": False,
             "status": "error",
             "message": f"Error when toggle notif: {str(e)}",
-            "toggle": None
+            "data": None
         }, status_code=500)
 
 
 # User Alert Settings
 @router.get(
     path='/users/settings',
+    response_model=GetUserAlertSettingsResponse,
+    responses={500: get_user_alert_settings_response_500},
     include_in_schema=True,
 )
-async def get_user_alert_setting(
+async def get_user_alert_settings(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     settings_db: SettingsDB = Depends(get_settings_db),
 ):
@@ -499,22 +537,27 @@ async def get_user_alert_setting(
                 data_result[alert_type] = False
         
         return JSONResponse(content={
+            "ok": True,
             "status": "success",
-            "message": f"User alert fetched successfully",
+            "message": f"User alert settings fetched successfully",
             "data": data_result,
         }, status_code=500)
     except Exception as e:
         return JSONResponse(content={
+            "ok": False,
             "status": "error",
-            "message": f"Global Error: {str(e)}",
+            "message": f"Error when fetch user alert settings: {str(e)}",
             "data": None,
         }, status_code=500)
 
 @router.put(
     path='/users/settings',
+    response_model=PutUserAlertSettingsResponse,
+    responses={500: put_user_alert_settings_response_500},
     include_in_schema=True,
 )
 async def put_user_alert_setting(
+    request: PutUserAlertSettingsRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     pass
