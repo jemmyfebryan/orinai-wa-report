@@ -45,8 +45,6 @@ logger = get_logger(__name__, service="FastAPI")
 
 APP_STAGE = os.getenv("APP_STAGE")
 
-# TODO: IMPLEMENT "data" key on alert JSONResponse instead of raw keys
-
 # Implement fetch BOT Number from Socket Client, otherwise its default to environment
 # openwa_client = SocketClient('http://localhost:8085/', 'my_secret_api_key')
 # logger.info(f"Getting BOT_PHONE_NUMBER from SocketClient...")

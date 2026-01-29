@@ -383,7 +383,6 @@ Kriteria Output pada Key 'is_handover':
         if isinstance(value, str):
             updated_alert_type = value
         else:
-            # TODO: update the user_alert_setting value for user_id to the value arg, do validation using allowed_alert_types
             allowed_alert_type = await self.get_notification_setting(
                 get_allowed_alert_type=True,
                 include_required_alert_type=False,
