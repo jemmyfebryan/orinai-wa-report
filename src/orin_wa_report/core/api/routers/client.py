@@ -163,7 +163,7 @@ async def get_chat_history(
 
 
 @router.get(
-    path="/whatsapp/phone_to_lid/{phone_number}",
+    path="/phone_to_lid/{phone_number}",
     include_in_schema=False,
 )
 async def get_phone_to_lid(
@@ -192,7 +192,7 @@ async def get_phone_to_lid(
         }, status_code=500)
 
 @router.get(
-    path="/whatsapp/contacts",
+    path="/contacts",
     include_in_schema=False,
 )
 async def get_contacts(
@@ -227,7 +227,7 @@ async def get_contacts(
     return contacts
 
 @router.get(
-    path="/whatsapp/sessions/{phone_number}",
+    path="/sessions/{phone_number}",
     include_in_schema=False,
 )
 async def get_sessions(
@@ -251,7 +251,7 @@ async def get_sessions(
     return session_ids
 
 @router.get(
-    path="/whatsapp/chat_history_by_session/{session_id}",
+    path="/chat_history_by_session/{session_id}",
     include_in_schema=False,
 )
 async def get_chat_history_by_session(
@@ -280,7 +280,7 @@ async def get_chat_history_by_session(
 
 
 @router.get(
-    path="/whatsapp/profile/{phone_number}",
+    path="/profile/{phone_number}",
     include_in_schema=False,
 )
 async def get_profile(
@@ -316,7 +316,7 @@ async def get_profile(
     }
     
 @router.post(
-    path="/whatsapp/dummy_notification",
+    path="/dummy_notification",
     include_in_schema=False,
 )
 async def wa_dummy_notification(
