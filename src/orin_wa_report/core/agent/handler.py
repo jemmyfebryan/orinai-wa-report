@@ -89,8 +89,8 @@ USE_RECEIVER_PHONE_MAPPING = False
 ## the sender is the value phone number
 SENDER_PHONE_MAPPING = {
     # "12816215965755@lid": "6281333370000@c.us"
-    # "6285850434383@c.us": "6281333370000@c.us"   # Pak Ali
-    "6285850434383@c.us": "628563098912@c.us"   # Pak Fe
+    "6285850434383@c.us": "6281333370000@c.us"   # Pak Ali
+    # "6285850434383@c.us": "628563098912@c.us"   # Pak Fe
     # "6285850434383@c.us": "628175006300@c.us"   # PT Bumimas Cargo Express
 }
 
@@ -1380,6 +1380,7 @@ def register_conv_handler(bot, openai_client: OpenAI):
         raw_lid_number = msg["data"]["sender"].get("lid")
         
         # Development Mapping
+        logger.info(raw_phone_number in SENDER_PHONE_MAPPING.keys())
         if USE_SENDER_PHONE_MAPPING:
             if raw_phone_number in SENDER_PHONE_MAPPING.keys():
                 raw_phone_number = SENDER_PHONE_MAPPING[raw_phone_number]
@@ -1391,6 +1392,7 @@ def register_conv_handler(bot, openai_client: OpenAI):
         wplus_phone_number = "+" + phone_number
         local_phone_number = "0" + phone_number[2:]
         
+        logger.info(f"{phone_number} messaged with info: phone_number: {phone_number}, lid_number: {lid_number}, wplus_phone_number: {wplus_phone_number}, local_phone_number: {local_phone_number}")
         # If phone_number is not verified
         
         # Max 3 users per question referred
@@ -1424,11 +1426,7 @@ FROM (
     FROM users
     WHERE
         (
-            wa_number = :wa_number
-            OR wa_lid = :wa_lid
-            OR phone_number = :phone_number
-            OR phone_number = :wplus_phone_number
-            OR phone_number = :local_phone_number
+            phone_number = :local_phone_number
         )
         AND deleted_at IS NULL
 ) AS filtered_users
@@ -1442,19 +1440,19 @@ LIMIT {max_api_token_users};
             response = await httpx_client.post(db_query_url, json={
                 "query": query,
                 "params": {
-                    "wa_number": phone_number,
-                    "wa_lid": lid_number,
-                    "phone_number": phone_number,
-                    "wplus_phone_number": wplus_phone_number,
-                    "local_phone_number": local_phone_number,
+                    "wa_number": str(phone_number),
+                    "wa_lid": str(lid_number),
+                    "phone_number": str(phone_number),
+                    "wplus_phone_number": str(wplus_phone_number),
+                    "local_phone_number": str(local_phone_number),
                 }
             })
             response_sql: Dict = response.json()
         
         rows = response_sql.get("rows") or []
-        # logger.info(f"User rows: {rows}")
+        logger.info(f"User rows: {response_sql}")
         if not rows:
-            logger.error(f"User {phone_number} not verified")
+            # logger.error(f"User {phone_number} not verified")
             # NOTE: DEATIVATED NOT VERIFIED USER MESSAGE
             # response = "Mohon maaf, nomor WhatsApp anda belum terverifikasi oleh sistem kami!"
             # try:

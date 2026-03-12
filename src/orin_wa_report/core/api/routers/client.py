@@ -153,7 +153,7 @@ async def get_chat_history(
         messages = await chat_db.get_messages_for_session(session['id'])
         # Sort messages by timestamp (oldest first)
         messages.sort(key=lambda x: x['timestamp'])
-        for msg in messages:
+        for msg in reversed(messages):
             role = "assistant" if msg['sender'] == 'bot' else 'user'
             openai_messages.append({
                 "role": role,
