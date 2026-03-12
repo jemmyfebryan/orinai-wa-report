@@ -311,6 +311,7 @@ async def get_profile(
     return {
         "profile_image": profile_url,
         "contact_name": contact_name,
+        "push_name": push_name,
         "description": description
     }
     
