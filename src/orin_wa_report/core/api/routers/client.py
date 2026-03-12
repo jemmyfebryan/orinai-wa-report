@@ -199,17 +199,32 @@ async def get_contacts(
     chat_db: ChatDB = Depends(get_chat_db),
 ):
     """
-    Fetch all phone numbers that have chat history
-    Returns: List of dicts with key "phone_number"
+    Fetch all contacts that have chat history
+    Returns: List of dicts with keys "phone_number", "user_name", "last_activity"
+    Sorted by last_activity DESC (newest first)
     """
-    # Query distinct phone numbers from sessions
-    def _get_phones():
+    # Query sessions with phone, user_name, and latest last_activity
+    def _get_contacts():
         cur = chat_db._conn.cursor()
-        cur.execute("SELECT DISTINCT phone FROM sessions")
-        return [row[0] for row in cur.fetchall()]
-    
-    phones = await chat_db._run(_get_phones)
-    return [{"phone_number": phone} for phone in phones]
+        cur.execute(
+            """
+            SELECT phone, user_name, MAX(last_activity) as last_activity
+            FROM sessions
+            GROUP BY phone
+            ORDER BY last_activity DESC
+            """
+        )
+        return [
+            {
+                "phone_number": row[0],
+                "user_name": row[1],
+                "last_activity": row[2]
+            }
+            for row in cur.fetchall()
+        ]
+
+    contacts = await chat_db._run(_get_contacts)
+    return contacts
 
 @router.get(
     path="/whatsapp/sessions/{phone_number}",
