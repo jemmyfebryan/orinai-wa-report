@@ -404,7 +404,7 @@ ORDER BY started_at ASC;
         def _get():
             cur = self._conn.cursor()
             cur.execute(
-                "SELECT id, sender, body, timestamp, metadata FROM messages WHERE session_id = ? ORDER BY timestamp DESC LIMIT ?",
+                "SELECT id, sender, body, timestamp, metadata FROM messages WHERE session_id = ? ORDER BY timestamp ASC LIMIT ?",
                 (session_id, limit)
             )
             rows = cur.fetchall()
@@ -1069,19 +1069,20 @@ async def chat_response(
         
         # Build a simple context from last user messages
         messages = await _DB.get_messages_for_session(entry.session_id, limit=20)
-        
-        last_messages = messages[:10]  # Only get 10 last messages for context
-        
-        last_message = messages[0]
+
+        # Messages are now ordered oldest first, so get the last 10 as the most recent
+        last_messages = messages[-10:] if len(messages) >= 10 else messages
+
+        last_message = messages[-1]
         logger.info(f"Get last message: {last_message}")
         
-        # Build LLm messages, reversed because 'messages' is most recent first
+        # Build LLM messages for context (now naturally ordered oldest to newest)
         llm_messages = [
             {
                 "role": "assistant" if m["sender"] == "bot" else "user",
                 "content": m["body"]
             }
-            for m in reversed(last_messages)
+            for m in last_messages
         ]
         
         # logger.info(f"Get LLM message: {llm_messages[0]}")
